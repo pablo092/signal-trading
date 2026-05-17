@@ -3,21 +3,14 @@
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Union
+from typing import Any, Union
+
+from pydantic import GetCoreSchemaHandler
+from pydantic_core import core_schema
 
 
 class Price:
-    """Immutable price value object.
-
-    Stores the value as a Decimal to avoid floating-point rounding errors.
-
-    Examples:
-        >>> p = Price.from_float(150.125)
-        >>> str(p)
-        '150.13'
-        >>> p.value
-        Decimal('150.13')
-    """
+    """Immutable price value object backed by Decimal."""
 
     __slots__ = ("_value",)
 
@@ -28,7 +21,6 @@ class Price:
 
     @classmethod
     def from_float(cls, value: float, decimals: int = 2) -> "Price":
-        """Create a Price from a float, rounding to the given decimal places."""
         quantizer = Decimal(10) ** -decimals
         decimal_value = Decimal(str(value)).quantize(quantizer, rounding=ROUND_HALF_UP)
         return cls(decimal_value)
@@ -36,6 +28,29 @@ class Price:
     @classmethod
     def from_decimal(cls, value: Decimal) -> "Price":
         return cls(value)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source_type: Any, handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        def validate(v: Any) -> "Price":
+            if isinstance(v, cls):
+                return v
+            if isinstance(v, (int, float)):
+                return cls.from_float(float(v))
+            if isinstance(v, Decimal):
+                return cls.from_decimal(v)
+            if isinstance(v, str):
+                return cls.from_decimal(Decimal(v))
+            raise ValueError(f"Cannot create Price from {type(v)}")
+
+        return core_schema.no_info_plain_validator_function(
+            validate,
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda p: float(p._value),
+                info_arg=False,
+            ),
+        )
 
     @property
     def value(self) -> Decimal:
