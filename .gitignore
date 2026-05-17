@@ -1,0 +1,62 @@
+# ── Environment & secrets ─────────────────────────────────────
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+coverage.xml
+.coverage
+htmlcov/
+
+# ── Go ────────────────────────────────────────────────────────
+bot-engine/vendor/
+bot-engine/*.exe
+bot-engine/*.test
+bot-engine/coverage.out
+
+# ── Flutter / Dart ────────────────────────────────────────────
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/build/
+app/android/.gradle/
+app/ios/Pods/
+app/ios/.symlinks/
+app/pubspec.lock
+app/*.iml
+app/android/local.properties
+app/android/key.properties
+
+# ── IDEs ──────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Docker ────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── Kubernetes ────────────────────────────────────────────────
+kubeconfig
+*.kubeconfig
+
+# ── Claude Code ───────────────────────────────────────────────
+.claude/

@@ -1,0 +1,42 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+
+  # Collect logs from all Docker containers
+  - job_name: docker-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["com.docker.compose.project=signal-trading"]
+    relabel_configs:
+      # Use container name as job label
+      - source_labels: [__meta_docker_container_name]
+        regex: "/(.*)"
+        target_label: job
+      # Use image name as service label
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+      # Keep container log stream
+      - source_labels: [__meta_docker_container_log_stream]
+        target_label: stream
+
+    pipeline_stages:
+      # Parse JSON logs from structlog/zap
+      - json:
+          expressions:
+            level: level
+            msg: msg
+            event: event
+      - labels:
+          level:
+          service:

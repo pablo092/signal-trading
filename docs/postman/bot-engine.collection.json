@@ -1,0 +1,167 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-0002-0002-0002-000000000002",
+    "name": "Bot Engine",
+    "description": "Order execution and portfolio management API.\n\n**Base URL**: `{{bot_engine_url}}`\n**WebSocket**: `{{bot_engine_ws_url}}`\n\n## Setup\n1. Import this collection\n2. Create environment `Trading Bot - Local` with:\n   - `bot_engine_url = http://localhost:8080`\n   - `bot_engine_ws_url = ws://localhost:8080/ws`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "bot_engine_url", "value": "http://localhost:8080", "type": "string" },
+    { "key": "bot_engine_ws_url", "value": "ws://localhost:8080/ws", "type": "string" }
+  ],
+  "item": [
+
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Liveness probe",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{bot_engine_url}}/health/live", "host": ["{{bot_engine_url}}"], "path": ["health", "live"] }
+          },
+          "response": [{
+            "name": "200 OK",
+            "status": "OK",
+            "code": 200,
+            "body": "{\"status\":\"alive\"}"
+          }]
+        },
+        {
+          "name": "Readiness probe",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{bot_engine_url}}/health/ready", "host": ["{{bot_engine_url}}"], "path": ["health", "ready"] }
+          },
+          "response": [{
+            "name": "200 OK",
+            "status": "OK",
+            "code": 200,
+            "body": "{\"status\":\"ready\",\"service\":\"bot-engine\",\"ws_clients\":2,\"paper_mode\":true}"
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Place order — AAPL RSI",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{bot_engine_url}}/api/v1/orders/place", "host": ["{{bot_engine_url}}"], "path": ["api", "v1", "orders", "place"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbol\": \"AAPL\",\n  \"strategy\": \"rsi\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Fetches an RSI signal for AAPL, applies risk rules, and places a market order if actionable.\n\n**Flow**: signal-service → risk check → Alpaca broker → event bus → WebSocket broadcast"
+          },
+          "response": [
+            {
+              "name": "200 OK — order placed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"skipped\": false,\n  \"order_id\": \"f47ac10b-58cc-4372-a567-0e02b2c3d479\",\n  \"symbol\": \"AAPL\",\n  \"side\": \"buy\",\n  \"quantity\": 3.33,\n  \"status\": \"submitted\"\n}"
+            },
+            {
+              "name": "200 OK — skipped (HOLD)",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"skipped\": true,\n  \"skip_reason\": \"HOLD signal\"\n}"
+            },
+            {
+              "name": "200 OK — skipped (low confidence)",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"skipped\": true,\n  \"skip_reason\": \"confidence 0.45 < minimum 0.60\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Place order — TSLA MA Cross",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{bot_engine_url}}/api/v1/orders/place", "host": ["{{bot_engine_url}}"], "path": ["api", "v1", "orders", "place"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbol\": \"TSLA\",\n  \"strategy\": \"ma_cross\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Place order — missing body (400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{bot_engine_url}}/api/v1/orders/place", "host": ["{{bot_engine_url}}"], "path": ["api", "v1", "orders", "place"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Expects 400 — symbol and strategy are required."
+          },
+          "response": [{
+            "name": "400 Bad Request",
+            "status": "Bad Request",
+            "code": 400,
+            "body": "{\"error\":\"Key: 'symbol' Error:Field validation for 'symbol' failed on the 'required' tag\"}"
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "Portfolio",
+      "item": [
+        {
+          "name": "Get portfolio equity",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{bot_engine_url}}/api/v1/portfolio/equity", "host": ["{{bot_engine_url}}"], "path": ["api", "v1", "portfolio", "equity"] },
+            "description": "Returns current account equity, paper mode flag, and market status."
+          },
+          "response": [{
+            "name": "200 OK",
+            "status": "OK",
+            "code": 200,
+            "body": "{\"equity\":100000.00,\"paper_mode\":true,\"market_open\":true}"
+          }]
+        },
+        {
+          "name": "Get open positions",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{bot_engine_url}}/api/v1/portfolio/positions", "host": ["{{bot_engine_url}}"], "path": ["api", "v1", "portfolio", "positions"] },
+            "description": "Returns all currently open positions with unrealized P&L."
+          },
+          "response": [{
+            "name": "200 OK",
+            "status": "OK",
+            "code": 200,
+            "body": "[\n  {\n    \"symbol\": \"AAPL\",\n    \"quantity\": 3.33,\n    \"average_entry_price\": 182.50,\n    \"current_price\": 184.20,\n    \"unrealized_pnl\": 5.66\n  }\n]"
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "Observability",
+      "item": [
+        {
+          "name": "Prometheus metrics",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{bot_engine_url}}/metrics", "host": ["{{bot_engine_url}}"], "path": ["metrics"] }
+          }
+        }
+      ]
+    }
+
+  ]
+}

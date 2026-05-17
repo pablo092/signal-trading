@@ -1,0 +1,12 @@
+{
+  "id": "env-trading-bot-local",
+  "name": "Trading Bot — Local",
+  "values": [
+    { "key": "signal_service_url", "value": "http://localhost:8000", "enabled": true, "type": "default" },
+    { "key": "bot_engine_url",     "value": "http://localhost:8080", "enabled": true, "type": "default" },
+    { "key": "bot_engine_ws_url",  "value": "ws://localhost:8080/ws", "enabled": true, "type": "default" },
+    { "key": "grafana_url",        "value": "http://localhost:3000",  "enabled": true, "type": "default" },
+    { "key": "jaeger_url",         "value": "http://localhost:16686", "enabled": true, "type": "default" }
+  ],
+  "_postman_variable_scope": "environment"
+}

@@ -1,0 +1,50 @@
+# signal-service — Fly.io deployment config
+# Deploy: cd signal-service && flyctl deploy
+
+app      = "trading-bot-signal-service"
+primary_region = "iad"    # us-east — close to Alpaca servers
+
+[build]
+  dockerfile = "Dockerfile"
+  target     = "runtime"
+
+[env]
+  ENVIRONMENT   = "production"
+  PORT          = "8000"
+  PAPER_TRADING = "true"
+  LOG_LEVEL     = "INFO"
+
+# Secrets (set via CLI — never put real values here):
+#   flyctl secrets set ALPACA_API_KEY=PKxxx ALPACA_SECRET_KEY=xxx
+#   flyctl secrets set DATABASE_URL=postgresql+asyncpg://...
+#   flyctl secrets set REDIS_URL=redis://...
+
+[[services]]
+  internal_port = 8000
+  protocol      = "tcp"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port     = 80
+    force_https = true
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port     = 443
+
+  [[services.http_checks]]
+    interval       = "15s"
+    timeout        = "5s"
+    grace_period   = "20s"
+    method         = "GET"
+    path           = "/health/ready"
+    protocol       = "http"
+
+[resources]
+  cpu_kind = "shared"
+  cpus     = 1
+  memory_mb = 512
+
+[[metrics]]
+  port = 8000
+  path = "/metrics"

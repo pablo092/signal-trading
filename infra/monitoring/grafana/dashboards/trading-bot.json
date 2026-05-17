@@ -1,0 +1,258 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "datasource", "id": "loki", "name": "Loki", "version": "1.0.0" }
+  ],
+  "annotations": { "list": [] },
+  "description": "Trading Bot — signal generation, order placement, risk metrics",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Signal Service",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 0.5 },
+            { "color": "red", "value": 1 }
+          ]},
+          "unit": "reqps"
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "title": "Signal Requests / s",
+      "type": "stat",
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "rate(http_requests_total{job=\"signal-service\", endpoint=\"/api/v1/signals/generate\"}[5m])",
+        "legendFormat": "req/s"
+      }]
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "title": "Signals Generated (total)",
+      "type": "stat",
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "sum(signals_generated_total{job=\"signal-service\"})",
+        "legendFormat": "total"
+      }]
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "green", "value": null },
+        { "color": "yellow", "value": 0.5 },
+        { "color": "red", "value": 1.5 }
+      ]}}},
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 3,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "title": "Signal Latency p95",
+      "type": "stat",
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"signal-service\",endpoint=\"/api/v1/signals/generate\"}[5m]))",
+        "legendFormat": "p95"
+      }]
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "color": { "mode": "thresholds" }, "thresholds": { "steps": [
+        { "color": "green", "value": null },
+        { "color": "yellow", "value": 0.01 },
+        { "color": "red", "value": 0.05 }
+      ]}}},
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 4,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "title": "Error Rate",
+      "type": "stat",
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "rate(http_requests_total{job=\"signal-service\",status=~\"5..\"}[5m]) / rate(http_requests_total{job=\"signal-service\"}[5m])",
+        "legendFormat": "error rate"
+      }]
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p50" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p95" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p99" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "id": 5,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Signal Generation Latency (p50 / p95 / p99)",
+      "type": "timeseries",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket{job=\"signal-service\",endpoint=\"/api/v1/signals/generate\"}[5m]))", "legendFormat": "p50" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"signal-service\",endpoint=\"/api/v1/signals/generate\"}[5m]))", "legendFormat": "p95" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job=\"signal-service\",endpoint=\"/api/v1/signals/generate\"}[5m]))", "legendFormat": "p99" }
+      ]
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "lineWidth": 2 } } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "id": 6,
+      "title": "Signals by Direction",
+      "type": "timeseries",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(signals_generated_total{direction=\"BUY\"}[5m])", "legendFormat": "BUY" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(signals_generated_total{direction=\"SELL\"}[5m])", "legendFormat": "SELL" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(signals_generated_total{direction=\"HOLD\"}[5m])", "legendFormat": "HOLD" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "BUY" }, "properties": [{ "id": "color", "value": { "fixedColor": "#00C896", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "SELL" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FF4757", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "HOLD" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FFB347", "mode": "fixed" } }] }
+        ]
+      }
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "id": 101,
+      "title": "Bot Engine",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 14 },
+      "id": 10,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "title": "Order Requests / s",
+      "type": "stat",
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "rate(http_requests_total{job=\"bot-engine\"}[5m])",
+        "legendFormat": "req/s"
+      }]
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "purple", "value": null }] } } },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 14 },
+      "id": 11,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "title": "WS Clients Connected",
+      "type": "stat",
+      "targets": [{
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "expr": "bot_engine_ws_clients_connected",
+        "legendFormat": "clients"
+      }]
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "id": 12,
+      "title": "Bot Engine HTTP Latency (p50 / p95)",
+      "type": "timeseries",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket{job=\"bot-engine\"}[5m]))", "legendFormat": "p50" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"bot-engine\"}[5m]))", "legendFormat": "p95" }
+      ]
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "id": 102,
+      "title": "Logs",
+      "type": "row"
+    },
+
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 27 },
+      "id": 20,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "title": "Service Logs",
+      "type": "logs",
+      "targets": [{
+        "datasource": { "type": "loki", "uid": "loki" },
+        "expr": "{service=~\"signal-service|bot-engine\"} |= ``",
+        "legendFormat": ""
+      }]
+    }
+
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["trading-bot"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(http_requests_total, job)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "service",
+        "options": [],
+        "query": { "query": "label_values(http_requests_total, job)", "refId": "A" },
+        "refresh": 2,
+        "sort": 1,
+        "type": "query",
+        "label": "Service"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Trading Bot Overview",
+  "uid": "trading-bot-overview",
+  "version": 1
+}

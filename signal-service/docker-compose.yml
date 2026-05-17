@@ -1,0 +1,257 @@
+version: "3.9"
+
+# ════════════════════════════════════════════════════════════
+# Trading Bot — local development stack
+#
+# Includes:
+#   - signal-service (Python)           :8000
+#   - bot-engine (Go)                   :8080  [placeholder]
+#   - PostgreSQL                        :5432
+#   - TimescaleDB (PostgreSQL extension):5433
+#   - Redis                             :6379
+#   - RabbitMQ + Management UI          :5672 / :15672
+#   - Prometheus                        :9090
+#   - Grafana                           :3000
+#   - Loki                              :3100
+#   - Promtail (log shipper)
+#   - Jaeger (tracing)                  :16686
+# ════════════════════════════════════════════════════════════
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+
+  # ── Application Services ────────────────────────────────
+
+  signal-service:
+    build:
+      context: ./services/signal-service
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: signal-service
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      ALPACA_API_KEY: ${ALPACA_API_KEY}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY}
+      PAPER_TRADING: "true"
+      ENVIRONMENT: development
+      LOG_LEVEL: DEBUG
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/tradingbot
+      JAEGER_ENDPOINT: http://jaeger:14268/api/traces
+      METRICS_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health/live').raise_for_status()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging
+    networks:
+      - tradingbot-net
+    labels:
+      - "prometheus.scrape=true"
+      - "prometheus.port=8000"
+      - "prometheus.path=/metrics"
+
+  # ── Databases ──────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: tradingbot
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    networks:
+      - tradingbot-net
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: tradingbot_ts
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    networks:
+      - tradingbot-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+    networks:
+      - tradingbot-net
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: rabbit
+      RABBITMQ_DEFAULT_PASS: rabbit
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    logging: *default-logging
+    networks:
+      - tradingbot-net
+
+  # ── Observability Stack ─────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./infra/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    logging: *default-logging
+    networks:
+      - tradingbot-net
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+    logging: *default-logging
+    networks:
+      - tradingbot-net
+
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: loki
+    restart: unless-stopped
+    volumes:
+      - ./infra/monitoring/loki/loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/config.yml
+    ports:
+      - "3100:3100"
+    logging: *default-logging
+    networks:
+      - tradingbot-net
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: promtail
+    restart: unless-stopped
+    volumes:
+      - ./infra/monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    logging: *default-logging
+    networks:
+      - tradingbot-net
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"   # Jaeger UI
+      - "14268:14268"   # HTTP collector
+      - "14250:14250"   # gRPC collector
+      - "9411:9411"     # Zipkin
+    logging: *default-logging
+    networks:
+      - tradingbot-net
+
+# ── Networks ───────────────────────────────────────────────
+
+networks:
+  tradingbot-net:
+    driver: bridge
+    name: tradingbot-net
+
+# ── Volumes ────────────────────────────────────────────────
+
+volumes:
+  postgres-data:
+  timescale-data:
+  redis-data:
+  rabbitmq-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:

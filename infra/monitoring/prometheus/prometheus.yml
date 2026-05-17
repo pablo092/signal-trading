@@ -1,0 +1,49 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  external_labels:
+    project: "trading-bot"
+
+# ── Alerting (optional — add Alertmanager later) ─────────────────────────────
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]
+
+# ── Scrape configs ────────────────────────────────────────────────────────────
+scrape_configs:
+
+  # Prometheus self-monitoring
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Signal Service (Python FastAPI)
+  - job_name: "signal-service"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["signal-service:8000"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: "signal-service"
+
+  # Bot Engine (Go Gin)
+  - job_name: "bot-engine"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["bot-engine:8080"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: "bot-engine"
+
+  # PostgreSQL (via postgres_exporter if running)
+  # - job_name: "postgres"
+  #   static_configs:
+  #     - targets: ["postgres-exporter:9187"]
+
+  # Redis (via redis_exporter if running)
+  # - job_name: "redis"
+  #   static_configs:
+  #     - targets: ["redis-exporter:9121"]

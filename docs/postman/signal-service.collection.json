@@ -1,0 +1,142 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-0001-0001-0001-000000000001",
+    "name": "Signal Service",
+    "description": "Trading signal generation API.\n\n**Base URL**: `{{signal_service_url}}`\n**Swagger UI**: `{{signal_service_url}}/docs`\n\n## Setup\n1. Import this collection\n2. Create environment `Trading Bot - Local` with variable `signal_service_url = http://localhost:8000`\n3. Set `alpaca_api_key` and `alpaca_secret_key` in environment",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "signal_service_url", "value": "http://localhost:8000", "type": "string" }
+  ],
+  "item": [
+
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Liveness probe",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{signal_service_url}}/health/live", "host": ["{{signal_service_url}}"], "path": ["health", "live"] },
+            "description": "Kubernetes liveness probe. Returns 200 if process is alive."
+          },
+          "response": [{
+            "name": "200 OK",
+            "status": "OK",
+            "code": 200,
+            "body": "{\"status\":\"alive\",\"service\":\"signal-service\",\"environment\":\"development\",\"paper_trading\":true}"
+          }]
+        },
+        {
+          "name": "Readiness probe",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{signal_service_url}}/health/ready", "host": ["{{signal_service_url}}"], "path": ["health", "ready"] },
+            "description": "Kubernetes readiness probe. Returns 200 when all dependencies are ready."
+          },
+          "response": [{
+            "name": "200 OK",
+            "status": "OK",
+            "code": 200,
+            "body": "{\"status\":\"ready\",\"service\":\"signal-service\",\"environment\":\"development\",\"paper_trading\":true}"
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "Signals",
+      "item": [
+        {
+          "name": "List available strategies",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{signal_service_url}}/api/v1/signals/strategies", "host": ["{{signal_service_url}}"], "path": ["api", "v1", "signals", "strategies"] },
+            "description": "Returns the list of registered signal strategy names."
+          },
+          "response": [{
+            "name": "200 OK",
+            "status": "OK",
+            "code": 200,
+            "body": "{\"strategies\":[\"rsi\",\"ma_cross\"]}"
+          }]
+        },
+        {
+          "name": "Generate RSI signal — AAPL",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{signal_service_url}}/api/v1/signals/generate", "host": ["{{signal_service_url}}"], "path": ["api", "v1", "signals", "generate"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbol\": \"AAPL\",\n  \"strategy\": \"rsi\",\n  \"timeframe\": \"1Hour\",\n  \"bars_limit\": 100\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Generates an RSI-based signal for AAPL on the 1-hour timeframe."
+          },
+          "response": [{
+            "name": "200 OK — BUY signal",
+            "status": "OK",
+            "code": 200,
+            "body": "{\n  \"id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"symbol\": \"AAPL\",\n  \"direction\": \"BUY\",\n  \"strength\": \"STRONG\",\n  \"price\": 182.50,\n  \"confidence\": 0.87,\n  \"reason\": \"RSI=24.3 — strongly oversold (threshold=25.0)\",\n  \"strategy_name\": \"RSIStrategy(period=14)\",\n  \"is_actionable\": true,\n  \"generated_at\": \"2026-05-13T14:30:00Z\"\n}"
+          }]
+        },
+        {
+          "name": "Generate MA Cross signal — TSLA",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{signal_service_url}}/api/v1/signals/generate", "host": ["{{signal_service_url}}"], "path": ["api", "v1", "signals", "generate"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbol\": \"TSLA\",\n  \"strategy\": \"ma_cross\",\n  \"timeframe\": \"1Day\",\n  \"bars_limit\": 50\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Generates a Moving Average Crossover signal for TSLA on the daily timeframe."
+          },
+          "response": [{
+            "name": "200 OK — HOLD signal",
+            "status": "OK",
+            "code": 200,
+            "body": "{\n  \"id\": \"550e8400-e29b-41d4-a716-446655440001\",\n  \"symbol\": \"TSLA\",\n  \"direction\": \"HOLD\",\n  \"strength\": \"WEAK\",\n  \"price\": 195.20,\n  \"confidence\": 0.10,\n  \"reason\": \"No crossover detected (fast=192.40, slow=193.10)\",\n  \"strategy_name\": \"MACrossStrategy(fast=9,slow=21)\",\n  \"is_actionable\": false,\n  \"generated_at\": \"2026-05-13T14:30:05Z\"\n}"
+          }]
+        },
+        {
+          "name": "Generate signal — invalid strategy (422)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{signal_service_url}}/api/v1/signals/generate", "host": ["{{signal_service_url}}"], "path": ["api", "v1", "signals", "generate"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbol\": \"AAPL\",\n  \"strategy\": \"unknown_strategy\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Expects 422 — unknown strategy name."
+          },
+          "response": [{
+            "name": "422 Unprocessable Entity",
+            "status": "Unprocessable Entity",
+            "code": 422,
+            "body": "{\"detail\":\"Strategy 'unknown_strategy' is not registered.\"}"
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "Observability",
+      "item": [
+        {
+          "name": "Prometheus metrics",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{signal_service_url}}/metrics", "host": ["{{signal_service_url}}"], "path": ["metrics"] },
+            "description": "Prometheus text-format metrics. Scraped by Prometheus every 15s."
+          }
+        }
+      ]
+    }
+
+  ]
+}

@@ -1,0 +1,57 @@
+# bot-engine — Fly.io deployment config
+# Deploy: cd bot-engine && flyctl deploy
+
+app      = "trading-bot-engine"
+primary_region = "iad"    # us-east — same region as signal-service
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ENV           = "production"
+  PORT          = "8080"
+  PAPER_TRADING = "true"
+  ALPACA_BASE_URL    = "https://paper-api.alpaca.markets"
+  # Point to the signal-service Fly internal address for zero-latency comms:
+  SIGNAL_SERVICE_URL = "http://trading-bot-signal-service.internal:8000"
+
+# Secrets (set via CLI):
+#   flyctl secrets set ALPACA_API_KEY=PKxxx ALPACA_SECRET_KEY=xxx
+
+[[services]]
+  internal_port = 8080
+  protocol      = "tcp"
+
+  [[services.ports]]
+    handlers = ["http"]
+    port     = 80
+    force_https = true
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port     = 443
+
+  # WebSocket support — keep connection alive
+  [[services.ports]]
+    handlers    = ["tls", "http"]
+    port        = 443
+    [services.ports.tls_options]
+      alpn            = ["h2", "http/1.1"]
+      versions        = ["TLSv1.2", "TLSv1.3"]
+
+  [[services.http_checks]]
+    interval       = "15s"
+    timeout        = "5s"
+    grace_period   = "15s"
+    method         = "GET"
+    path           = "/health/ready"
+    protocol       = "http"
+
+[resources]
+  cpu_kind  = "shared"
+  cpus      = 1
+  memory_mb = 256
+
+[[metrics]]
+  port = 8080
+  path = "/metrics"

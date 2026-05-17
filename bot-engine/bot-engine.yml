@@ -1,0 +1,170 @@
+# ════════════════════════════════════════════════════════════════
+# Bot Engine — Kubernetes manifests
+# Namespace: tradingbot  (create with: kubectl create namespace tradingbot)
+# Apply: kubectl apply -f bot-engine/bot-engine.yml
+# ════════════════════════════════════════════════════════════════
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tradingbot
+
+---
+# ── ConfigMap (non-secret config) ────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bot-engine-config
+  namespace: tradingbot
+data:
+  ENV:                "production"
+  PORT:               "8080"
+  PAPER_TRADING:      "true"
+  ALPACA_BASE_URL:    "https://paper-api.alpaca.markets"
+  SIGNAL_SERVICE_URL: "http://signal-service:8000"
+
+---
+# ── Secret (sensitive values) ────────────────────────────────────
+# Replace base64 values:
+#   echo -n "YOUR_KEY" | base64
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bot-engine-secrets
+  namespace: tradingbot
+type: Opaque
+data:
+  ALPACA_API_KEY:    UkVQTEFDRV9XSVRIX1JFQUxfS0VZ    # base64("REPLACE_WITH_REAL_KEY")
+  ALPACA_SECRET_KEY: UkVQTEFDRV9XSVRIX1JFQUxfU0VDUkVU  # base64("REPLACE_WITH_REAL_SECRET")
+
+---
+# ── Deployment ───────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bot-engine
+  namespace: tradingbot
+  labels:
+    app: bot-engine
+    version: "1.0.0"
+spec:
+  replicas: 1          # Single replica — order idempotency is critical
+  selector:
+    matchLabels:
+      app: bot-engine
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0    # No downtime during deploys
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: bot-engine
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8080"
+        prometheus.io/path:   "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: bot-engine
+          image: ghcr.io/REPLACE_ORG/bot-engine:latest  # updated by CI/CD
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: bot-engine-config
+            - secretRef:
+                name: bot-engine-secrets
+          resources:
+            requests:
+              cpu:    "100m"
+              memory: "128Mi"
+            limits:
+              cpu:    "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534     # nobody
+            capabilities:
+              drop: ["ALL"]
+
+---
+# ── Service ──────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: bot-engine
+  namespace: tradingbot
+  labels:
+    app: bot-engine
+spec:
+  selector:
+    app: bot-engine
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+
+---
+# ── HorizontalPodAutoscaler ───────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: bot-engine
+  namespace: tradingbot
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: bot-engine
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# ── PodDisruptionBudget ───────────────────────────────────────────
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: bot-engine
+  namespace: tradingbot
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: bot-engine

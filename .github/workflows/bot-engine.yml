@@ -1,0 +1,161 @@
+name: CI/CD — Bot Engine
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "bot-engine/**"
+      - ".github/workflows/bot-engine.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "bot-engine/**"
+
+env:
+  REGISTRY:   ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/bot-engine
+  GO_VERSION: "1.22"
+
+jobs:
+
+  # ════════════════════════════════════
+  # 1. Lint
+  # ════════════════════════════════════
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bot-engine
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "2024.1"
+          working-directory: bot-engine
+
+  # ════════════════════════════════════
+  # 2. Test
+  # ════════════════════════════════════
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint
+    defaults:
+      run:
+        working-directory: bot-engine
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run tests
+        env:
+          ALPACA_API_KEY:    PKTEST000000000
+          ALPACA_SECRET_KEY: testsecretkey000000000000000000000
+        run: go test ./... -v -race -coverprofile=coverage.out -count=1
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+
+  # ════════════════════════════════════
+  # 3. Build & Push Docker image
+  # ════════════════════════════════════
+  build:
+    name: Build & Push image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: bot-engine
+          file: bot-engine/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ════════════════════════════════════
+  # 4. Deploy to Kubernetes
+  # ════════════════════════════════════
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: echo "IMAGE_TAG=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+
+      - name: Update image in deployment
+        run: |
+          kubectl set image deployment/bot-engine \
+            bot-engine=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }} \
+            --namespace=tradingbot
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/bot-engine \
+            --namespace=tradingbot \
+            --timeout=5m
+
+      - name: Verify health
+        run: |
+          kubectl run health-check \
+            --image=curlimages/curl:latest \
+            --restart=Never \
+            --rm \
+            --namespace=tradingbot \
+            -- curl -sf http://bot-engine:8080/health/ready

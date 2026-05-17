@@ -1,0 +1,190 @@
+name: CI/CD — Signal Service
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "services/signal-service/**"
+      - ".github/workflows/signal-service.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "services/signal-service/**"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/signal-service
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ════════════════════════════════════
+  # 1. Lint & Type Check
+  # ════════════════════════════════════
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/signal-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check src/ tests/
+
+      - name: Ruff format check
+        run: ruff format --check src/ tests/
+
+      - name: Mypy type check
+        run: mypy src/
+
+  # ════════════════════════════════════
+  # 2. Test & Coverage Gate
+  # ════════════════════════════════════
+  test:
+    name: Test (coverage ≥80%)
+    runs-on: ubuntu-latest
+    needs: lint
+    defaults:
+      run:
+        working-directory: services/signal-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests with coverage
+        env:
+          # Dummy credentials for tests (mocked anyway)
+          ALPACA_API_KEY: PKTEST000000000
+          ALPACA_SECRET_KEY: testsecretkey0000000000000000000000
+        run: |
+          pytest \
+            --cov=src \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=80 \
+            -v
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: services/signal-service/coverage.xml
+          flags: signal-service
+          fail_ci_if_error: false
+
+      - name: Coverage summary comment (PRs)
+        if: github.event_name == 'pull_request'
+        uses: MishaKav/pytest-coverage-comment@main
+        with:
+          pytest-xml-coverage-path: services/signal-service/coverage.xml
+          title: Signal Service Coverage
+
+  # ════════════════════════════════════
+  # 3. Build & Push Docker image
+  # ════════════════════════════════════
+  build:
+    name: Build & Push image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: services/signal-service
+          file: services/signal-service/Dockerfile
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ════════════════════════════════════
+  # 4. Deploy to Kubernetes
+  # ════════════════════════════════════
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: echo "IMAGE_TAG=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+
+      - name: Update image in deployment
+        run: |
+          kubectl set image deployment/signal-service \
+            signal-service=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }} \
+            --namespace=tradingbot
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/signal-service \
+            --namespace=tradingbot \
+            --timeout=5m
+
+      - name: Verify health
+        run: |
+          kubectl run health-check \
+            --image=curlimages/curl:latest \
+            --restart=Never \
+            --rm \
+            --namespace=tradingbot \
+            -- curl -sf http://signal-service:8000/health/ready

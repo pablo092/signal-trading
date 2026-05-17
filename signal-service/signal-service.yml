@@ -1,0 +1,189 @@
+# ════════════════════════════════════════════════════════════
+# signal-service — Kubernetes manifests
+# Namespace: tradingbot
+# ════════════════════════════════════════════════════════════
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tradingbot
+  labels:
+    app.kubernetes.io/managed-by: kubectl
+
+---
+# ConfigMap — non-secret configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signal-service-config
+  namespace: tradingbot
+data:
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  PAPER_TRADING: "true"
+  PORT: "8000"
+  REDIS_URL: "redis://redis-service:6379/0"
+  DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres-service:5432/tradingbot"
+  JAEGER_ENDPOINT: "http://jaeger-service:14268/api/traces"
+  METRICS_ENABLED: "true"
+
+---
+# Secret — sensitive credentials (use sealed-secrets or external-secrets in real prod)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: signal-service-secrets
+  namespace: tradingbot
+type: Opaque
+stringData:
+  ALPACA_API_KEY: "REPLACE_WITH_REAL_KEY"
+  ALPACA_SECRET_KEY: "REPLACE_WITH_REAL_SECRET"
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signal-service
+  namespace: tradingbot
+  labels:
+    app: signal-service
+    version: "0.1.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: signal-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: signal-service
+        version: "0.1.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Security context: run as non-root
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: signal-service
+          image: ghcr.io/your-org/trading-bot/signal-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+
+          envFrom:
+            - configMapRef:
+                name: signal-service-config
+            - secretRef:
+                name: signal-service-secrets
+
+          # Resource limits — prevent one pod from starving others
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          # Liveness: restart if app is hung
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+
+          # Readiness: don't send traffic until ready
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+
+          # Startup: give extra time on cold start
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 5
+
+      # Graceful termination: wait for in-flight requests
+      terminationGracePeriodSeconds: 30
+
+---
+# Service — stable internal DNS for signal-service
+apiVersion: v1
+kind: Service
+metadata:
+  name: signal-service
+  namespace: tradingbot
+  labels:
+    app: signal-service
+spec:
+  selector:
+    app: signal-service
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+      name: http
+  type: ClusterIP
+
+---
+# HorizontalPodAutoscaler — scale 2→10 pods based on CPU
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: signal-service-hpa
+  namespace: tradingbot
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: signal-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# PodDisruptionBudget — ensure high availability during updates
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signal-service-pdb
+  namespace: tradingbot
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: signal-service
