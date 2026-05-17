@@ -78,11 +78,7 @@ func (b *AlpacaBroker) GetOrderStatus(ctx context.Context, brokerID string) (ent
 		return entities.OrderStatusPending, 0, fmt.Errorf("alpaca get order %s: %w", brokerID, err)
 	}
 
-	filledQty := 0.0
-	if o.FilledQty != nil {
-		f, _ := o.FilledQty.Float64()
-		filledQty = f
-	}
+	filledQty, _ := o.FilledQty.Float64()
 
 	return fromAlpacaStatus(string(o.Status)), filledQty, nil
 }
@@ -154,7 +150,7 @@ func fromAlpacaStatus(s string) entities.OrderStatus {
 	case "canceled", "cancelled":
 		return entities.OrderStatusCanceled
 	case "partially_filled":
-		return entities.OrderStatusPartiallyFilled
+		return entities.OrderStatusSubmitted
 	case "new", "accepted", "pending_new":
 		return entities.OrderStatusPending
 	default:
