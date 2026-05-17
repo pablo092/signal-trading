@@ -1,32 +1,31 @@
 # ── Builder ──────────────────────────────────────────────────────
 FROM golang:1.22-alpine AS builder
 
-RUN apk add --no-cache git ca-certificates tzdata wget
+RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /build
 
-# Cache dependencies first
-COPY go.mod go.sum* ./
+COPY go.mod go.sum ./
 RUN go mod download
 
-# Build binary
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-w -s -extldflags=-static" \
     -o bot-engine ./main.go
 
 # ── Runtime ───────────────────────────────────────────────────────
-FROM scratch
+FROM alpine:3.20
 
-# Bring in certs and timezone data from builder
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+RUN apk add --no-cache ca-certificates tzdata wget && \
+    addgroup -S appgroup && adduser -S appuser -G appgroup
+
 COPY --from=builder /build/bot-engine /bot-engine
 
-# wget for healthcheck (use alpine-based image if you prefer)
-# The scratch image has no shell — healthcheck is done by Kubernetes probes
-# or the docker-compose healthcheck via an external curl/wget
+USER appuser
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -qO- http://localhost:8080/health/live || exit 1
 
 ENTRYPOINT ["/bot-engine"]
