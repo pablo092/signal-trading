@@ -7,7 +7,6 @@ Uses pandas-ta for indicator computation.
 from __future__ import annotations
 
 import pandas as pd
-import pandas_ta as ta  # type: ignore[import]
 
 from src.domain.ports import ISignalStrategy
 from src.domain.value_objects import Signal, SignalDirection, SignalStrength, Symbol, Timeframe
@@ -62,7 +61,7 @@ class RSIStrategy(ISignalStrategy):
         """Compute RSI and emit a directional signal."""
         self.validate_bars(bars)
 
-        rsi_series: pd.Series = ta.rsi(bars["close"], length=self._period)  # type: ignore[assignment]
+        rsi_series = self._calc_rsi(bars["close"])
         current_rsi = float(rsi_series.iloc[-1])
         current_price = float(bars["close"].iloc[-1])
 
@@ -121,6 +120,16 @@ class RSIStrategy(ISignalStrategy):
             max(0.1, distance_from_center * 0.3),
             f"RSI={rsi:.1f} — neutral zone",
         )
+
+    def _calc_rsi(self, close: pd.Series) -> pd.Series:
+        """Wilder's RSI using exponential smoothing (com = period - 1)."""
+        delta = close.diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_gain = gain.ewm(com=self._period - 1, min_periods=self._period).mean()
+        avg_loss = loss.ewm(com=self._period - 1, min_periods=self._period).mean()
+        rs = avg_gain / avg_loss
+        return 100 - (100 / (1 + rs))
 
     def _confidence_from_rsi(self, rsi: float, direction: str) -> float:
         """Map RSI extremity to confidence [0.5, 0.99]."""
