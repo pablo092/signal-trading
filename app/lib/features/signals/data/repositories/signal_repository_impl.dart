@@ -27,7 +27,7 @@ class SignalRepositoryImpl implements ISignalRepository {
       if (e.toString().contains('TimeoutException')) {
         return Left(const TimeoutFailure());
       }
-      return Left(NetworkFailure(message: e.toString()));
+      return Left(NetworkFailure(e.toString()));
     }
   }
 

@@ -144,8 +144,8 @@ class _PortfolioSummarySection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // In production this would come from a PortfolioBloc
-    const equity = 100_250.00;
-    const dayPnL = 1_240.50;
+    const equity = 100250.00;
+    const dayPnL = 1240.50;
     const dayPnLPct = 1.25;
 
     return Column(

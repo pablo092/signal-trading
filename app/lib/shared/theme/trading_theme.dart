@@ -58,7 +58,7 @@ abstract class TradingTheme {
           error: loss,
         ),
         scaffoldBackgroundColor: primary,
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: surface,
           elevation: 0,
           shape: RoundedRectangleBorder(
