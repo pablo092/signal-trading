@@ -60,3 +60,6 @@ kubeconfig
 
 # ── Claude Code ───────────────────────────────────────────────
 .claude/
+
+# ── Agent skill packages (build output) ──────────────────────
+skills/dist/
