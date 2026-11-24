@@ -14,17 +14,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 
 	"github.com/trading-bot/bot-engine/internal/application/eventbus"
 	"github.com/trading-bot/bot-engine/internal/application/usecases"
 	"github.com/trading-bot/bot-engine/internal/domain/entities"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/auth"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/broker"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/config"
-	httphandlers "github.com/trading-bot/bot-engine/internal/infrastructure/http/handlers"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/http/server"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/messaging"
-	"github.com/trading-bot/bot-engine/internal/infrastructure/middleware"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/repository"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/signalclient"
 )
@@ -49,6 +48,8 @@ func main() {
 	logger.Info("bot_engine.starting",
 		zap.String("environment", cfg.Environment),
 		zap.Bool("paper_trading", cfg.PaperTrading),
+		zap.String("broker_host", cfg.BrokerHost()),
+		zap.Bool("order_execution_enabled", cfg.OrderExecutionEnabled),
 		zap.Int("port", cfg.Port),
 	)
 
@@ -73,49 +74,29 @@ func main() {
 	// ── Prometheus registry ──────────────────────────────────
 	reg := prometheus.NewRegistry()
 
+	// ── Auth (ADR-003): scoped service tokens, deny by default ─
+	tokens, err := auth.LoadStore(cfg.AuthTokensJSON, cfg.AuthTokensFile)
+	if err != nil {
+		logger.Fatal("auth.token_table_invalid", zap.Error(err))
+	}
+	if tokens.Len() == 0 {
+		logger.Warn("auth.no_tokens_configured: every /api/v1 and /ws request will be rejected with 401")
+	}
+
 	// ── HTTP server (Gin) ─────────────────────────────────────
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	router := gin.New()
-	router.Use(
-		middleware.Recovery(logger),
-		middleware.RequestID(),
-		middleware.StructuredLogger(logger),
-		middleware.Tracing("bot-engine"),
-		middleware.PrometheusMetrics(reg),
-	)
-
-	// Health probes
-	router.GET("/health/live", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "alive"})
+	router := server.NewRouter(server.Deps{
+		Config:     cfg,
+		Tokens:     tokens,
+		PlaceOrder: placeOrderUC,
+		Broker:     alpacaBroker,
+		Hub:        hub,
+		Registry:   reg,
+		Logger:     logger,
 	})
-	router.GET("/health/ready", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status":      "ready",
-			"service":     "bot-engine",
-			"ws_clients":  hub.ConnectedClients(),
-			"paper_mode":  cfg.PaperTrading,
-		})
-	})
-
-	// Metrics
-	router.GET("/metrics", gin.WrapH(promhttp.HandlerFor(reg, promhttp.HandlerOpts{})))
-
-	// WebSocket (Flutter app)
-	router.GET("/ws", func(c *gin.Context) {
-		clientID := c.Query("client_id")
-		if clientID == "" {
-			clientID = "anon"
-		}
-		hub.ServeWS(c.Writer, c.Request, clientID)
-	})
-
-	// API v1
-	v1 := router.Group("/api/v1")
-	httphandlers.NewOrdersHandler(placeOrderUC, logger).RegisterRoutes(v1)
-	httphandlers.NewPortfolioHandler(alpacaBroker, logger).RegisterRoutes(v1)
 
 	// ── Graceful shutdown ─────────────────────────────────────
 	srv := &http.Server{

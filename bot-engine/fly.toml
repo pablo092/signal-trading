@@ -11,6 +11,7 @@ primary_region = "iad"    # us-east — same region as signal-service
   ENV           = "production"
   PORT          = "8080"
   PAPER_TRADING = "true"
+  ORDER_EXECUTION_ENABLED = "false"
   ALPACA_BASE_URL    = "https://paper-api.alpaca.markets"
   # Point to the signal-service Fly internal address for zero-latency comms:
   SIGNAL_SERVICE_URL = "http://trading-bot-signal-service.internal:8000"

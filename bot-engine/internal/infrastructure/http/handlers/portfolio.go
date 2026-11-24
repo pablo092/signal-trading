@@ -11,19 +11,16 @@ import (
 
 // PortfolioHandler handles portfolio-related HTTP endpoints.
 type PortfolioHandler struct {
-	broker ports.BrokerPort
-	logger *zap.Logger
+	broker    ports.BrokerPort
+	paperMode bool
+	logger    *zap.Logger
 }
 
-// NewPortfolioHandler constructs a PortfolioHandler.
-func NewPortfolioHandler(broker ports.BrokerPort, logger *zap.Logger) *PortfolioHandler {
-	return &PortfolioHandler{broker: broker, logger: logger}
-}
-
-// RegisterRoutes mounts the portfolio routes on the given router group.
-func (h *PortfolioHandler) RegisterRoutes(rg *gin.RouterGroup) {
-	rg.GET("/portfolio/equity", h.GetEquity)
-	rg.GET("/portfolio/positions", h.GetPositions)
+// NewPortfolioHandler constructs a PortfolioHandler. paperMode must be the
+// *verified* mode from config, never a hardcoded value.
+// Routes are mounted by the server package's route-scope table.
+func NewPortfolioHandler(broker ports.BrokerPort, paperMode bool, logger *zap.Logger) *PortfolioHandler {
+	return &PortfolioHandler{broker: broker, paperMode: paperMode, logger: logger}
 }
 
 // equityResponse is the JSON body for GET /api/v1/portfolio/equity.
@@ -54,7 +51,7 @@ func (h *PortfolioHandler) GetEquity(c *gin.Context) {
 
 	c.JSON(http.StatusOK, equityResponse{
 		Equity:     equity,
-		PaperMode:  true,
+		PaperMode:  h.paperMode,
 		MarketOpen: marketOpen,
 	})
 }
