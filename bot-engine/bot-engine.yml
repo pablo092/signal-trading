@@ -20,6 +20,7 @@ data:
   ENV:                "production"
   PORT:               "8080"
   PAPER_TRADING:      "true"
+  ORDER_EXECUTION_ENABLED: "false"
   ALPACA_BASE_URL:    "https://paper-api.alpaca.markets"
   SIGNAL_SERVICE_URL: "http://signal-service:8000"
 

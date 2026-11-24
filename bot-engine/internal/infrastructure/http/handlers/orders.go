@@ -12,18 +12,16 @@ import (
 
 // OrdersHandler handles order-related HTTP endpoints.
 type OrdersHandler struct {
-	placeOrder *usecases.PlaceOrderUseCase
-	logger     *zap.Logger
+	placeOrder       *usecases.PlaceOrderUseCase
+	executionEnabled bool
+	logger           *zap.Logger
 }
 
-// NewOrdersHandler constructs an OrdersHandler.
-func NewOrdersHandler(placeOrder *usecases.PlaceOrderUseCase, logger *zap.Logger) *OrdersHandler {
-	return &OrdersHandler{placeOrder: placeOrder, logger: logger}
-}
-
-// RegisterRoutes mounts the order routes on the given router group.
-func (h *OrdersHandler) RegisterRoutes(rg *gin.RouterGroup) {
-	rg.POST("/orders/place", h.PlaceOrder)
+// NewOrdersHandler constructs an OrdersHandler. When executionEnabled is false
+// (the default, ADR-005 §5.2) every order route returns 403 execution_disabled.
+// Routes are mounted by the server package's route-scope table, never here.
+func NewOrdersHandler(placeOrder *usecases.PlaceOrderUseCase, executionEnabled bool, logger *zap.Logger) *OrdersHandler {
+	return &OrdersHandler{placeOrder: placeOrder, executionEnabled: executionEnabled, logger: logger}
 }
 
 // placeOrderRequest is the JSON body for POST /api/v1/orders/place.
@@ -57,9 +55,16 @@ type placeOrderResponse struct {
 //	@Param        body  body      placeOrderRequest   true  "Place order request"
 //	@Success      200   {object}  placeOrderResponse
 //	@Failure      400   {object}  map[string]string
+//	@Failure      401   {object}  map[string]string
+//	@Failure      403   {object}  map[string]string  "execution_disabled or insufficient_scope"
 //	@Failure      500   {object}  map[string]string
 //	@Router       /api/v1/orders/place [post]
 func (h *OrdersHandler) PlaceOrder(c *gin.Context) {
+	if !h.executionEnabled || h.placeOrder == nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "execution_disabled"})
+		return
+	}
+
 	var req placeOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
