@@ -55,7 +55,7 @@ func main() {
 
 	// ── Infrastructure layer ─────────────────────────────────
 	alpacaBroker := broker.NewAlpacaBroker(cfg, logger)
-	signalSvc    := signalclient.New(cfg.SignalServiceURL, logger)
+	signalSvc    := signalclient.New(cfg.SignalServiceURL, cfg.SignalServiceToken, logger)
 	bus          := eventbus.New(logger)
 	hub          := messaging.NewWSHub(logger)
 

@@ -9,15 +9,14 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
-
+from src.application.strategies import factory as factory_module
 from src.application.strategies.factory import StrategyFactory
 from src.application.strategies.ma_cross_strategy import MovingAverageCrossStrategy
 from src.application.strategies.rsi_strategy import RSIStrategy
 from src.domain.entities.exceptions import InsufficientDataError, StrategyNotFoundError
-from src.domain.value_objects import SignalDirection, SignalStrength, Symbol, Timeframe
+from src.domain.value_objects import SignalDirection, Symbol, Timeframe
 
 from tests.conftest import make_bars, make_overbought_bars, make_oversold_bars
-
 
 # ══════════════════════════════════════════════════════════════
 # RSIStrategy
@@ -236,7 +235,10 @@ class TestStrategyFactory:
         assert "rsi" in available
         assert "ma_cross" in available
 
-    def test_register_custom_strategy(self) -> None:
+    def test_register_custom_strategy(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Isolate the global registry so "dummy" does not leak into other tests.
+        monkeypatch.setattr(factory_module, "_REGISTRY", dict(factory_module._REGISTRY))
+
         class DummyStrategy(RSIStrategy):
             @property
             def name(self) -> str:
@@ -246,3 +248,8 @@ class TestStrategyFactory:
         factory = StrategyFactory()
         strategy = factory.create("dummy")
         assert isinstance(strategy, DummyStrategy)
+
+
+def test_strategy_not_found_message_is_not_repr_quoted() -> None:
+    err = StrategyNotFoundError("nope", available=["rsi", "ma_cross"])
+    assert str(err) == "Strategy 'nope' is not registered. Available: ma_cross, rsi."

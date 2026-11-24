@@ -26,6 +26,11 @@ class ISignalStrategy(ABC):
     def min_bars_required(self) -> int:
         """Minimum number of OHLCV bars needed to compute the signal."""
 
+    @property
+    def required_columns(self) -> tuple[str, ...]:
+        """Columns of the bars DataFrame the strategy reads."""
+        return ("close",)
+
     @abstractmethod
     def analyze(
         self,
@@ -48,9 +53,12 @@ class ISignalStrategy(ABC):
         """
 
     def validate_bars(self, bars: pd.DataFrame) -> None:
-        """Raises InsufficientDataError if bars is too short."""
+        """Raises ValueError on missing columns and InsufficientDataError if bars is too short."""
         from .entities.exceptions import InsufficientDataError
 
+        missing = [c for c in self.required_columns if c not in bars.columns]
+        if missing:
+            raise ValueError(f"Missing required columns: {', '.join(missing)}")
         if len(bars) < self.min_bars_required:
             raise InsufficientDataError(
                 required=self.min_bars_required,

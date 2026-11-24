@@ -102,16 +102,18 @@ curl "http://localhost:8000/health/ready"
 ### Signal Service (Python)
 
 ```bash
-cd services/signal-service
+cd signal-service
 
-# Instalar dependencias con dev extras
-pip install -e ".[dev]"
+# venv con Python 3.11 e instalación de las versiones exactas del lock
+py -3.11 -m venv .venv            # Linux/macOS: python3.11 -m venv .venv
+.venv/Scripts/python -m pip install --require-hashes -r requirements-dev.lock   # Linux/macOS: .venv/bin/python
+.venv/Scripts/python -m pip install --no-deps -e .
 
 # Correr tests con cobertura
-pytest
+.venv/Scripts/python -m pytest --cov=src --cov-fail-under=80
 
-# Ver reporte HTML de cobertura
-open htmlcov/index.html
+# Levantar el server (factory: los settings se leen al arrancar)
+uvicorn --factory src.main:create_app --port 8000
 
 # Lint
 ruff check src/ tests/
@@ -130,6 +132,21 @@ mypy src/
 | `PAPER_TRADING` | Usar paper trading | `true` |
 | `LOG_LEVEL` | Nivel de logs | `INFO` |
 | `ENVIRONMENT` | Entorno | `development` |
+| `AUTH_TOKENS` / `AUTH_TOKENS_FILE` | Tabla de tokens con scopes (ver [runbook](../docs/runbooks/SERVICE_TOKENS.md)). Vacía = toda la API responde 401 | `[{"id":"mcp-gateway",...}]` |
+| `ALPACA_DATA_FEED` | Feed de market data (`iex` para el plan gratuito, `sip` si tenés suscripción) | `iex` |
+| `MARKET_DATA_TIMEOUT_SECONDS` | Timeout por request a Alpaca | `10` |
+| `MARKET_DATA_CACHE_TTL_SECONDS` | TTL de la caché de barras (0 = sin caché) | `30` |
+
+### Dependencias y lock
+
+`pyproject.toml` es la única fuente de dependencias. Después de cambiarlo, regenerá los locks:
+
+```bash
+uv pip compile pyproject.toml --universal --python-version 3.11 --generate-hashes --no-header -o requirements.lock
+uv pip compile pyproject.toml --extra dev --universal --python-version 3.11 --generate-hashes --no-header -o requirements-dev.lock
+```
+
+La imagen Docker instala solo `requirements.lock` (runtime, sin pytest/ruff/mypy).
 
 ---
 
@@ -139,7 +156,7 @@ mypy src/
 
 ```bash
 # Signal Service
-cd services/signal-service && pytest
+cd signal-service && .venv/Scripts/python -m pytest
 
 # Con reporte detallado por módulo
 pytest --cov-report=term-missing

@@ -1,14 +1,16 @@
-# Runbook: bot-engine service tokens (ADR-003, M1)
+# Runbook: service tokens (ADR-003, M1)
 
-bot-engine authenticates every `/api/v1/*` and `/ws` request with a scoped static token
-sent as `Authorization: Bearer <token>`. Only `/health/live`, `/health/ready`, and
-`/metrics` are public. **With no tokens configured, every protected request returns 401.**
+bot-engine and signal-service authenticate every `/api/v1/*` request (and bot-engine's `/ws`)
+with a scoped static token sent as `Authorization: Bearer <token>`. Both services read the
+**same token table format and rules**, so one table can serve both.
+Public routes: `/health/live`, `/health/ready`, `/metrics` (both), plus `/docs`, `/redoc`,
+`/openapi.json` (signal-service). **With no tokens configured, every protected request returns 401.**
 
 ## Scopes
 
 | Scope | Routes | Who may hold it |
 |---|---|---|
-| `market:read` | (signal-service, BL-06 Python side) | agent, human, service |
+| `market:read` | signal-service `POST /api/v1/signals/generate`, `GET /api/v1/signals/strategies` | agent, human, service |
 | `portfolio:read` | `GET /api/v1/trading-mode`, `/portfolio/equity`, `/portfolio/positions`, `GET /ws` | agent, human, service |
 | `orders:place-legacy` | `POST /api/v1/orders/place` (deprecated, removed in M3) | **human only** |
 | `intent:create` | M3 | agent, human |
@@ -34,10 +36,17 @@ Agent tokens holding a human-only scope make the engine refuse to start.
    ]
    ```
 4. Provide the table through one of:
-   - `AUTH_TOKENS` (inline JSON). In Compose it is read from `BOT_ENGINE_AUTH_TOKENS` in your local `.env`.
+   - `AUTH_TOKENS` (inline JSON). In Compose both services read it from `SERVICE_AUTH_TOKENS` in your local `.env`.
    - `AUTH_TOKENS_FILE` (path to a JSON file, e.g. a mounted secret). `AUTH_TOKENS` wins if both are set.
    - Fly.io: `fly secrets set AUTH_TOKENS='[...]' -a <app>`.
-5. Restart bot-engine. An invalid table is fatal at startup. The error names the entry `id`, never the content.
+5. Restart the services. An invalid table is fatal at startup. The error names the entry `id`, never the content.
+
+## bot-engine → signal-service
+
+bot-engine calls signal-service to get signals, so it needs its own token:
+add an entry such as `{"id": "bot-engine", "type": "service", "sha256": "<digest>", "scopes": ["market:read"]}`
+to the table and give bot-engine the plaintext token in `SIGNAL_SERVICE_TOKEN`
+(Compose: `BOT_ENGINE_SIGNAL_TOKEN`).
 
 ## Rotate or revoke
 

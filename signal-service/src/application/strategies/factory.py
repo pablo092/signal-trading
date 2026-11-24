@@ -38,12 +38,29 @@ class StrategyFactory:
         Raises:
             StrategyNotFoundError: If the name is not registered.
         """
-        cls = _REGISTRY.get(name)
+        key = name.strip().lower()
+        cls = _REGISTRY.get(key)
         if cls is None:
-            raise StrategyNotFoundError(name)
+            raise StrategyNotFoundError(name, available=list(_REGISTRY))
         return cls(**kwargs)
 
-    @property
     def available_strategies(self) -> list[str]:
-        """Returns the list of registered strategy names."""
-        return list(_REGISTRY.keys())
+        """Returns the registered strategy names, sorted."""
+        return sorted(_REGISTRY)
+
+    @classmethod
+    def register(cls, name: str, strategy_cls: type[ISignalStrategy]) -> None:
+        """Register a strategy class under a (case-insensitive) name.
+
+        Raises:
+            ValueError: If the name is empty or already registered.
+            TypeError:  If strategy_cls is not an ISignalStrategy subclass.
+        """
+        key = name.strip().lower()
+        if not key:
+            raise ValueError("strategy name must be non-empty")
+        if not (isinstance(strategy_cls, type) and issubclass(strategy_cls, ISignalStrategy)):
+            raise TypeError("strategy_cls must be a subclass of ISignalStrategy")
+        if key in _REGISTRY:
+            raise ValueError(f"strategy '{key}' is already registered")
+        _REGISTRY[key] = strategy_cls
