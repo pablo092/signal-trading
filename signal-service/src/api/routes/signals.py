@@ -23,17 +23,25 @@ from src.domain.entities.exceptions import (
     MarketDataUnavailableError,
     StrategyNotFoundError,
 )
+from src.domain.ports import IMarketDataRepository
 from src.domain.value_objects import Symbol, Timeframe
 from src.infrastructure.adapters.alpaca_market_data import AlpacaMarketDataAdapter
+from src.infrastructure.auth import SCOPE_MARKET_READ, require_scope
 from src.infrastructure.config import Settings
 
 logger = structlog.get_logger(__name__)
-router = APIRouter(prefix="/api/v1/signals", tags=["Signals"])
+# Every route on this router requires market:read (ADR-003, deny by default).
+router = APIRouter(
+    prefix="/api/v1/signals",
+    tags=["Signals"],
+    dependencies=[Depends(require_scope(SCOPE_MARKET_READ))],
+    responses={401: {"description": "Missing or invalid token"}, 403: {"description": "Insufficient scope"}},
+)
 
 # Module-level singletons (injected at app startup via app.state)
 _settings: Settings | None = None
 _factory: StrategyFactory | None = None
-_market_data: AlpacaMarketDataAdapter | None = None
+_market_data: IMarketDataRepository | None = None
 
 
 def get_settings() -> Settings:
@@ -46,7 +54,7 @@ def get_factory() -> StrategyFactory:
     return _factory
 
 
-def get_market_data() -> AlpacaMarketDataAdapter:
+def get_market_data() -> IMarketDataRepository:
     assert _market_data is not None, "MarketDataAdapter not initialised"
     return _market_data
 
@@ -77,7 +85,7 @@ def init_dependencies(settings: Settings) -> None:
 async def generate_signal(
     body: GenerateSignalRequest,
     factory: StrategyFactory = Depends(get_factory),
-    market_data: AlpacaMarketDataAdapter = Depends(get_market_data),
+    market_data: IMarketDataRepository = Depends(get_market_data),
 ) -> SignalResponse:
     log = logger.bind(symbol=body.symbol, strategy=body.strategy)
     t0 = time.perf_counter()
@@ -108,8 +116,8 @@ async def generate_signal(
         return SignalResponse(
             id=signal.id,
             symbol=str(signal.symbol),
-            direction=signal.direction.value,  # type: ignore[arg-type]
-            strength=signal.strength.value,    # type: ignore[arg-type]
+            direction=signal.direction.value,
+            strength=signal.strength.value,
             price=signal.price.as_float(),
             confidence=signal.confidence,
             reason=signal.reason,
@@ -120,13 +128,13 @@ async def generate_signal(
 
     except StrategyNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
     except InsufficientDataError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
@@ -139,7 +147,7 @@ async def generate_signal(
 
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
@@ -153,4 +161,4 @@ async def generate_signal(
 def list_strategies(
     factory: StrategyFactory = Depends(get_factory),
 ) -> StrategyListResponse:
-    return StrategyListResponse(strategies=factory.available_strategies)
+    return StrategyListResponse(strategies=factory.available_strategies())

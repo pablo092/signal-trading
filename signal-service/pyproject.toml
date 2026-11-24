@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "signal-service"
@@ -11,8 +11,8 @@ dependencies = [
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.29.0",
     "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
     "pandas>=2.2.0",
-    "pandas-ta>=0.3.14b",
     "numpy>=1.26.0",
     "structlog>=24.1.0",
     "httpx>=0.27.0",
@@ -30,6 +30,7 @@ dev = [
     "pytest-cov>=5.0.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
+    "uv>=0.4.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -39,6 +40,7 @@ include = ["src*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 addopts = "--tb=short"
 
 [tool.ruff]
@@ -48,9 +50,14 @@ src = ["src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-ignore = ["E501"]
+ignore = [
+    "E501",
+    "B008",   # FastAPI Depends() in argument defaults is the framework idiom
+    "UP042",  # (str, Enum) -> StrEnum changes str() output; revisit with API contracts (BL-16)
+]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
 ignore_missing_imports = true
+plugins = ["pydantic.mypy"]

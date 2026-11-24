@@ -3,15 +3,11 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /build
 
-# Install build tools
-RUN pip install --no-cache-dir build wheel
+# Runtime dependencies only, pinned with hashes (generated from pyproject.toml:
+#   uv pip compile pyproject.toml --universal --python-version 3.11 --generate-hashes -o requirements.lock)
+COPY requirements.lock ./
 
-# Copy only dependency files first (layer cache)
-COPY pyproject.toml requirements.txt ./
-COPY src/ ./src/
-
-# Install runtime deps into a prefix for easy copying
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes --prefix=/install -r requirements.lock
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM python:3.11-slim AS runtime
@@ -38,4 +34,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:8000/health/ready').raise_for_status()"
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["uvicorn", "--factory", "src.main:create_app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

@@ -9,19 +9,21 @@ Metrics:     http://localhost:8000/metrics
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import structlog
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import Counter, Histogram, make_asgi_app
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
+from starlette.responses import Response
 
 from src.api.routes import signals as signals_router
 from src.api.schemas import HealthResponse
+from src.infrastructure.auth import TokenStore
 from src.infrastructure.config import Settings
 
 # ── Structured logging ───────────────────────────────────────────────────────
@@ -55,7 +57,7 @@ SIGNALS_GENERATED = Counter(
 
 
 class PrometheusMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         start = time.perf_counter()
         response = await call_next(request)
         duration = time.perf_counter() - start
@@ -100,6 +102,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.state.settings = settings
+    # Fail fast on an invalid token table (the error names the entry id, never its content).
+    app.state.tokens = TokenStore.load(settings.auth_tokens, settings.auth_tokens_file)
+    if len(app.state.tokens) == 0:
+        logger.warning("auth.no_tokens_configured", effect="every /api/v1 request returns 401")
 
     # ── Middleware ───────────────────────────────────────────────────────────
     app.add_middleware(
@@ -147,12 +153,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
-
+# No module-level app: settings (and the token table) are loaded when the server starts,
+# so importing this module never requires secrets. Run with:
+#   uvicorn --factory src.main:create_app
 if __name__ == "__main__":
     _settings = Settings()
     uvicorn.run(
-        "src.main:app",
+        "src.main:create_app",
+        factory=True,
         host="0.0.0.0",
         port=_settings.port,
         reload=not _settings.is_production,

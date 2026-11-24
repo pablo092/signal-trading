@@ -32,14 +32,17 @@ type signalResponse struct {
 // Client calls the signal-service over HTTP.
 type Client struct {
 	baseURL    string
+	token      string
 	httpClient *http.Client
 	logger     *zap.Logger
 }
 
-// New creates a signal service HTTP client.
-func New(baseURL string, logger *zap.Logger) *Client {
+// New creates a signal service HTTP client. token is the bot-engine's service token
+// for signal-service (scope market:read, ADR-003); empty sends no Authorization header.
+func New(baseURL, token string, logger *zap.Logger) *Client {
 	return &Client{
 		baseURL: baseURL,
+		token:   token,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -65,6 +68,9 @@ func (c *Client) GetSignal(ctx context.Context, symbol, strategy string) (*ports
 		return nil, fmt.Errorf("building signal request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

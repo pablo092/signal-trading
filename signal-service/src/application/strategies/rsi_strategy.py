@@ -1,7 +1,7 @@
 """RSI (Relative Strength Index) signal strategy.
 
 Classic momentum oscillator: oversold (<30) → BUY, overbought (>70) → SELL.
-Uses pandas-ta for indicator computation.
+Wilder RSI computed with pandas ewm (no pandas-ta).
 """
 
 from __future__ import annotations

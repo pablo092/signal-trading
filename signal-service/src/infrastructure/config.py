@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     alpaca_api_key: str = Field(..., alias="ALPACA_API_KEY")
     alpaca_secret_key: str = Field(..., alias="ALPACA_SECRET_KEY")
     paper_trading: bool = Field(True, alias="PAPER_TRADING")
+    alpaca_data_feed: str = Field("iex", alias="ALPACA_DATA_FEED")
+
+    # Market data (TD-13)
+    market_data_timeout_seconds: float = Field(10.0, gt=0, alias="MARKET_DATA_TIMEOUT_SECONDS")
+    market_data_cache_ttl_seconds: float = Field(30.0, ge=0, alias="MARKET_DATA_CACHE_TTL_SECONDS")
+
+    # Auth (ADR-003): scoped token table, same format as bot-engine. Empty = every API call is 401.
+    auth_tokens: str = Field("", alias="AUTH_TOKENS", repr=False)
+    auth_tokens_file: str = Field("", alias="AUTH_TOKENS_FILE")
 
     # Observability
     jaeger_endpoint: str = Field("", alias="JAEGER_ENDPOINT")

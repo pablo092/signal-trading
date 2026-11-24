@@ -4,13 +4,22 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 
-def make_bars(n: int = 50, base_price: float = 100.0, seed: int = 42) -> pd.DataFrame:
-    """Generate a neutral OHLCV DataFrame with random-walk prices."""
+def make_bars(
+    n: int = 50,
+    base_price: float = 100.0,
+    seed: int = 42,
+    trend: float = 0.0,
+    noise: float = 0.5,
+) -> pd.DataFrame:
+    """Generate an OHLCV DataFrame with random-walk prices.
+
+    trend and noise are the per-bar drift and volatility in percent
+    (defaults reproduce the original neutral random walk exactly).
+    """
     rng = np.random.default_rng(seed)
-    returns = rng.normal(0, 0.005, size=n)
+    returns = rng.normal(trend / 100, noise / 100, size=n)
     close = base_price * np.cumprod(1 + returns)
     open_ = np.roll(close, 1)
     open_[0] = base_price

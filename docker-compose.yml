@@ -46,6 +46,8 @@ services:
       <<: *common-env
       ENVIRONMENT:    ${ENVIRONMENT:-development}
       LOG_LEVEL:      ${LOG_LEVEL:-DEBUG}
+      AUTH_TOKENS:    ${SERVICE_AUTH_TOKENS:-}
+      ALPACA_DATA_FEED: ${ALPACA_DATA_FEED:-iex}
       REDIS_URL:      redis://redis:6379/0
       DATABASE_URL:   postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/tradingbot
       JAEGER_ENDPOINT: http://jaeger:14268/api/traces
@@ -84,8 +86,11 @@ services:
       ALPACA_BASE_URL:    https://paper-api.alpaca.markets
       # ADR-005 §5.2: order routes return 403 unless explicitly enabled.
       ORDER_EXECUTION_ENABLED: ${ORDER_EXECUTION_ENABLED:-false}
-      # ADR-003: scoped token table (JSON with sha256 digests). Empty = every API call is 401.
-      AUTH_TOKENS:        ${BOT_ENGINE_AUTH_TOKENS:-}
+      # ADR-003: scoped token table (JSON with sha256 digests), shared with signal-service.
+      # Empty = every API call is 401. See docs/runbooks/SERVICE_TOKENS.md.
+      AUTH_TOKENS:        ${SERVICE_AUTH_TOKENS:-}
+      # bot-engine's own plaintext token for calling signal-service (needs market:read).
+      SIGNAL_SERVICE_TOKEN: ${BOT_ENGINE_SIGNAL_TOKEN:-}
       SIGNAL_SERVICE_URL: http://signal-service:8000
     depends_on:
       signal-service:

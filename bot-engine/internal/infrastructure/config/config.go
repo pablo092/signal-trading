@@ -30,7 +30,8 @@ type Config struct {
 	AlpacaBaseURL   string
 
 	// Signal service
-	SignalServiceURL string
+	SignalServiceURL   string
+	SignalServiceToken string // bot-engine's own token for signal-service (market:read)
 
 	// AuthTokensJSON / AuthTokensFile hold the scoped service-token table (ADR-003).
 	AuthTokensJSON string
@@ -61,6 +62,7 @@ func Load() (*Config, error) {
 		AlpacaSecretKey:       os.Getenv("ALPACA_SECRET_KEY"),
 		AlpacaBaseURL:         getEnv("ALPACA_BASE_URL", "https://"+PaperBrokerHost),
 		SignalServiceURL:      getEnv("SIGNAL_SERVICE_URL", "http://signal-service:8000"),
+		SignalServiceToken:    os.Getenv("SIGNAL_SERVICE_TOKEN"),
 		AuthTokensJSON:        os.Getenv("AUTH_TOKENS"),
 		AuthTokensFile:        os.Getenv("AUTH_TOKENS_FILE"),
 	}

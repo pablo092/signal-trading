@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import Field, field_validator
+from pydantic import field_validator
 from pydantic.dataclasses import dataclass
 
 from .price import Price
@@ -73,7 +73,7 @@ class Signal:
         strategy_name: str,
         confidence: float,
         reason: str,
-    ) -> "Signal":
+    ) -> Signal:
         """Factory method — ensures always-valid Signal creation."""
         return cls(
             id=uuid4(),
@@ -84,7 +84,7 @@ class Signal:
             strategy_name=strategy_name,
             confidence=confidence,
             reason=reason,
-            generated_at=datetime.now(tz=timezone.utc),
+            generated_at=datetime.now(tz=UTC),
         )
 
     @property

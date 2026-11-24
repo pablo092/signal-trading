@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Union
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import core_schema
@@ -20,20 +20,20 @@ class Price:
         self._value = value
 
     @classmethod
-    def from_float(cls, value: float, decimals: int = 2) -> "Price":
+    def from_float(cls, value: float, decimals: int = 2) -> Price:
         quantizer = Decimal(10) ** -decimals
         decimal_value = Decimal(str(value)).quantize(quantizer, rounding=ROUND_HALF_UP)
         return cls(decimal_value)
 
     @classmethod
-    def from_decimal(cls, value: Decimal) -> "Price":
+    def from_decimal(cls, value: Decimal) -> Price:
         return cls(value)
 
     @classmethod
     def __get_pydantic_core_schema__(
         cls, source_type: Any, handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
-        def validate(v: Any) -> "Price":
+        def validate(v: Any) -> Price:
             if isinstance(v, cls):
                 return v
             if isinstance(v, (int, float)):
