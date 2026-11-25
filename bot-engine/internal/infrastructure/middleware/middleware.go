@@ -6,14 +6,17 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/zap"
+
+	"github.com/trading-bot/bot-engine/internal/infrastructure/http/apierror"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/reqid"
 )
 
-// Recovery returns a Gin middleware that recovers from panics and logs them.
+// Recovery recovers from panics, logs them with the request ID and stack, and
+// answers with the standard error envelope. Register it after RequestID.
 func Recovery(logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
@@ -21,23 +24,25 @@ func Recovery(logger *zap.Logger) gin.HandlerFunc {
 				logger.Error("http.panic_recovered",
 					zap.Any("panic", r),
 					zap.String("path", c.Request.URL.Path),
+					zap.String("request_id", c.GetString(reqid.GinKey)),
+					zap.Stack("stack"),
 				)
-				c.AbortWithStatus(http.StatusInternalServerError)
+				apierror.Abort(c, http.StatusInternalServerError, apierror.CodeInternal, "internal error")
 			}
 		}()
 		c.Next()
 	}
 }
 
-// RequestID injects a unique request ID into each request context and response header.
+// RequestID assigns each request a correlation ID: the caller's X-Request-ID
+// when it is log-safe, otherwise a new UUID. The ID is echoed in the response
+// header, stored in the gin and request contexts, and forwarded on outbound calls.
 func RequestID() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id := c.GetHeader("X-Request-ID")
-		if id == "" {
-			id = uuid.New().String()
-		}
-		c.Set("request_id", id)
-		c.Header("X-Request-ID", id)
+		id := reqid.FromHeader(c.GetHeader(reqid.Header))
+		c.Set(reqid.GinKey, id)
+		c.Header(reqid.Header, id)
+		c.Request = c.Request.WithContext(reqid.WithContext(c.Request.Context(), id))
 		c.Next()
 	}
 }
@@ -52,7 +57,7 @@ func StructuredLogger(logger *zap.Logger) gin.HandlerFunc {
 			zap.String("path", c.FullPath()),
 			zap.Int("status", c.Writer.Status()),
 			zap.Duration("latency", time.Since(start)),
-			zap.String("request_id", c.GetString("request_id")),
+			zap.String("request_id", c.GetString(reqid.GinKey)),
 			zap.String("client_ip", c.ClientIP()),
 		)
 	}

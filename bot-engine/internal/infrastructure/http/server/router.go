@@ -18,6 +18,7 @@ import (
 	"github.com/trading-bot/bot-engine/internal/domain/ports"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/auth"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/config"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/http/apierror"
 	httphandlers "github.com/trading-bot/bot-engine/internal/infrastructure/http/handlers"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/middleware"
 )
@@ -95,9 +96,10 @@ func Routes(d Deps) []Route {
 // NewRouter builds the Gin engine from the route-scope table.
 func NewRouter(d Deps) *gin.Engine {
 	router := gin.New()
+	router.HandleMethodNotAllowed = true
 	router.Use(
+		middleware.RequestID(), // first, so panics and every log line carry the ID
 		middleware.Recovery(d.Logger),
-		middleware.RequestID(),
 		middleware.StructuredLogger(d.Logger),
 		middleware.Tracing("bot-engine"),
 		middleware.PrometheusMetrics(d.Registry),
@@ -109,5 +111,11 @@ func NewRouter(d Deps) *gin.Engine {
 		}
 		router.Handle(r.Method, r.Path, handlers...)
 	}
+	router.NoRoute(func(c *gin.Context) {
+		apierror.Abort(c, http.StatusNotFound, apierror.CodeNotFound, "no such route")
+	})
+	router.NoMethod(func(c *gin.Context) {
+		apierror.Abort(c, http.StatusMethodNotAllowed, apierror.CodeMethodNotAllowed, "method not allowed on this route")
+	})
 	return router
 }

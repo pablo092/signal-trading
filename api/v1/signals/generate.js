@@ -10,6 +10,9 @@ const STRATEGY_RE = /^[a-z][a-z0-9_]{0,31}$/;
 const TIMEFRAMES = new Set(["1Min", "5Min", "15Min", "30Min", "1Hour", "4Hour", "1Day"]);
 
 module.exports = async function handler(req, res) {
+  // Correlation ID (BL-20): forwarded to signal-service and returned to the browser.
+  const requestId = `vercel-${crypto.randomUUID()}`;
+  res.setHeader("X-Request-ID", requestId);
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -32,7 +35,11 @@ module.exports = async function handler(req, res) {
   try {
     const upstream = await fetch(`${SIGNAL_SERVICE_URL}/api/v1/signals/generate`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "X-Request-ID": requestId,
+      },
       body: JSON.stringify({ symbol, strategy, timeframe }),
       redirect: "error",
       signal: AbortSignal.timeout(20000),
@@ -47,8 +54,8 @@ module.exports = async function handler(req, res) {
       res.setHeader("Content-Type", "application/json");
       return res.status(upstream.status).send(text.slice(0, 1000));
     }
-    return res.status(502).json({ error: "upstream_error", status: upstream.status });
+    return res.status(502).json({ error: "upstream_error", detail: `signal-service returned HTTP ${upstream.status}`, request_id: requestId });
   } catch {
-    return res.status(504).json({ error: "upstream_unreachable" });
+    return res.status(504).json({ error: "upstream_unreachable", detail: "signal-service did not answer", request_id: requestId });
   }
 };

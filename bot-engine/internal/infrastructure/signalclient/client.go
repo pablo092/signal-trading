@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/trading-bot/bot-engine/internal/domain/ports"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/reqid"
 )
 
 // signalResponse mirrors the JSON response from signal-service POST /api/v1/signals/generate.
@@ -68,6 +69,9 @@ func (c *Client) GetSignal(ctx context.Context, symbol, strategy string) (*ports
 		return nil, fmt.Errorf("building signal request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if id := reqid.FromContext(ctx); id != "" {
+		req.Header.Set(reqid.Header, id) // correlate engine and signal-service logs
+	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}

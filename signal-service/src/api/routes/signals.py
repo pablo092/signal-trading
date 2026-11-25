@@ -9,8 +9,9 @@ from __future__ import annotations
 import time
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 
+from src.api.errors import ApiError
 from src.api.schemas import (
     GenerateSignalRequest,
     SignalResponse,
@@ -127,29 +128,21 @@ async def generate_signal(
         )
 
     except StrategyNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
+        raise ApiError(422, "strategy_not_found", str(exc)) from exc
 
     except InsufficientDataError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
+        raise ApiError(422, "insufficient_data", str(exc)) from exc
 
     except MarketDataUnavailableError as exc:
+        # The upstream message can carry broker details: log it, never return it.
         log.error("market_data.unavailable", error=str(exc))
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
+        raise ApiError(
+            503, "market_data_unavailable", "market data is temporarily unavailable"
         ) from exc
 
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
+        # Domain value objects raise ValueError with user-facing messages.
+        raise ApiError(422, "invalid_request", str(exc)) from exc
 
 
 @router.get(

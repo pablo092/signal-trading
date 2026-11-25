@@ -21,6 +21,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 
+from src.api.errors import install as install_error_handling
 from src.api.routes import signals as signals_router
 from src.api.schemas import HealthResponse
 from src.infrastructure.auth import TokenStore
@@ -113,8 +114,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=["*"],
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID"],
     )
     app.add_middleware(PrometheusMiddleware)
+    # Added last = outermost: every response and log line carries the request ID.
+    install_error_handling(app)
 
     # ── Prometheus metrics endpoint ──────────────────────────────────────────
     metrics_app = make_asgi_app()

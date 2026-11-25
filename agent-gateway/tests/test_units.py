@@ -111,3 +111,14 @@ def test_audit_file_append(tmp_path: Path) -> None:
     lines = [json.loads(x) for x in f.read_text(encoding="utf-8").splitlines()]
     assert [x["tool"] for x in lines] == ["list_strategies", "get_positions"]
     assert lines[1]["error_code"] == "upstream_timeout" and lines[0]["duration_ms"] == 1.2
+
+
+
+def test_request_id_fits_service_limit_with_longest_agent_id() -> None:
+    import re
+
+    from agent_gateway.server import new_request_id
+
+    rid = new_request_id("a" * 64)  # longest AGENT_ID the config accepts
+    assert re.fullmatch(r"[A-Za-z0-9._-]{1,64}", rid)
+    assert new_request_id("x") != new_request_id("x")

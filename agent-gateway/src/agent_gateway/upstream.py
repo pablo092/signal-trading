@@ -7,6 +7,7 @@ errors are mapped to short, sanitized messages: raw broker errors never reach th
 
 from __future__ import annotations
 
+import contextvars
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -27,6 +28,9 @@ ALLOWED_ENDPOINTS: frozenset[tuple[Service, str, str]] = frozenset(
 )
 
 _SERVICE_NAMES: dict[Service, str] = {"signal": "signal-service", "engine": "bot-engine"}
+
+# Correlation ID of the tool call in progress (BL-20); sent as X-Request-ID.
+current_request_id: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="")
 
 
 @dataclass
@@ -67,7 +71,11 @@ class Upstream:
             raise UpstreamError("endpoint_not_allowed", f"{method} {path} is not a read endpoint")
         name = _SERVICE_NAMES[service]
         try:
-            resp = await self._client.request(method, self._base[service] + path, json=json)
+            rid = current_request_id.get()
+            headers = {"X-Request-ID": rid} if rid else None
+            resp = await self._client.request(
+                method, self._base[service] + path, json=json, headers=headers
+            )
         except httpx.TimeoutException:
             raise UpstreamError("upstream_timeout", f"{name} did not answer in time") from None
         except httpx.HTTPError:
@@ -98,6 +106,8 @@ def _map_error(name: str, resp: httpx.Response) -> UpstreamError:
         return UpstreamError("invalid_input", msg, status)
     if status == 429:
         return UpstreamError("upstream_rate_limited", f"{name} is rate limiting requests", status)
+    if status == 502:
+        return UpstreamError("broker_unavailable", f"{name} could not reach the broker", status)
     if status == 503:
         return UpstreamError("market_data_unavailable", "market data is temporarily unavailable", status)
     return UpstreamError("upstream_error", f"{name} returned HTTP {status}", status)

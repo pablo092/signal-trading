@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"go.uber.org/zap"
+
+	"github.com/trading-bot/bot-engine/internal/infrastructure/reqid"
 )
 
 func TestGetSignalSendsBearerToken(t *testing.T) {
@@ -41,5 +43,22 @@ func TestGetSignalNoTokenAndUnauthorized(t *testing.T) {
 
 	if _, err := New(srv.URL, "", zap.NewNop()).GetSignal(context.Background(), "AAPL", "rsi"); err == nil {
 		t.Fatal("a 401 from signal-service must surface as an error")
+	}
+}
+
+func TestGetSignalForwardsRequestID(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get(reqid.Header)
+		_, _ = w.Write([]byte(`{"id":"1","symbol":"AAPL","direction":"HOLD","strength":"WEAK","price":1,"confidence":0.1,"is_actionable":false,"generated_at":"2026-11-24T00:00:00Z"}`))
+	}))
+	defer srv.Close()
+
+	ctx := reqid.WithContext(context.Background(), "corr-123")
+	if _, err := New(srv.URL, "t", zap.NewNop()).GetSignal(ctx, "AAPL", "rsi"); err != nil {
+		t.Fatal(err)
+	}
+	if got != "corr-123" {
+		t.Fatalf("X-Request-ID = %q, want corr-123", got)
 	}
 }

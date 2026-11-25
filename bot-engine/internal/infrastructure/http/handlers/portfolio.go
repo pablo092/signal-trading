@@ -7,6 +7,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/trading-bot/bot-engine/internal/domain/ports"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/http/apierror"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/reqid"
 )
 
 // PortfolioHandler handles portfolio-related HTTP endpoints.
@@ -37,13 +39,13 @@ type equityResponse struct {
 //	@Tags         Portfolio
 //	@Produce      json
 //	@Success      200  {object}  equityResponse
-//	@Failure      500  {object}  map[string]string
+//	@Failure      502  {object}  apierror.Body  "broker_unavailable"
 //	@Router       /api/v1/portfolio/equity [get]
 func (h *PortfolioHandler) GetEquity(c *gin.Context) {
 	equity, err := h.broker.GetPortfolioEquity(c.Request.Context())
 	if err != nil {
-		h.logger.Error("portfolio.equity_failed", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.logger.Error("portfolio.equity_failed", zap.Error(err), zap.String("request_id", reqid.FromContext(c.Request.Context())))
+		apierror.Abort(c, http.StatusBadGateway, apierror.CodeBrokerUnavailable, "the broker did not return the account equity")
 		return
 	}
 
@@ -72,13 +74,13 @@ type positionItem struct {
 //	@Tags         Portfolio
 //	@Produce      json
 //	@Success      200  {array}   positionItem
-//	@Failure      500  {object}  map[string]string
+//	@Failure      502  {object}  apierror.Body  "broker_unavailable"
 //	@Router       /api/v1/portfolio/positions [get]
 func (h *PortfolioHandler) GetPositions(c *gin.Context) {
 	positions, err := h.broker.GetPositions(c.Request.Context())
 	if err != nil {
-		h.logger.Error("portfolio.positions_failed", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.logger.Error("portfolio.positions_failed", zap.Error(err), zap.String("request_id", reqid.FromContext(c.Request.Context())))
+		apierror.Abort(c, http.StatusBadGateway, apierror.CodeBrokerUnavailable, "the broker did not return the open positions")
 		return
 	}
 
