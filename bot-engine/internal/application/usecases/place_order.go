@@ -5,7 +5,11 @@ package usecases
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
+
+	"github.com/shopspring/decimal"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -27,12 +31,12 @@ import (
 // Follows the Command pattern — PlaceOrderInput is the command,
 // PlaceOrderOutput is the result. Supports undo via CancelOrderUseCase.
 type PlaceOrderUseCase struct {
-	broker      ports.BrokerPort
-	orderRepo   ports.OrderRepositoryPort
-	signals     ports.SignalServicePort
-	publisher   ports.EventPublisherPort
-	riskRules   entities.RiskRules
-	logger      *zap.Logger
+	broker    ports.BrokerPort
+	orderRepo ports.OrderRepositoryPort
+	signals   ports.SignalServicePort
+	publisher ports.EventPublisherPort
+	riskRules entities.RiskRules
+	logger    *zap.Logger
 }
 
 // NewPlaceOrderUseCase constructs the use case with all dependencies injected.
@@ -62,9 +66,9 @@ type PlaceOrderInput struct {
 
 // PlaceOrderOutput is the result DTO.
 type PlaceOrderOutput struct {
-	Order    *entities.Order
-	Signal   *ports.Signal
-	Skipped  bool   // true if risk rules rejected the signal
+	Order      *entities.Order
+	Signal     *ports.Signal
+	Skipped    bool // true if risk rules rejected the signal
 	SkipReason string
 }
 
@@ -108,34 +112,35 @@ func (uc *PlaceOrderUseCase) Execute(ctx context.Context, input PlaceOrderInput)
 		return &PlaceOrderOutput{Signal: signal, Skipped: true, SkipReason: reason}, nil
 	}
 
-	// ── Step 3: Check daily loss limit ─────────────────────
-	dailyPnL, err := uc.getDailyPnL(ctx)
-	if err != nil {
-		log.Warn("place_order.daily_pnl_check_failed", zap.Error(err))
-		// Non-fatal: continue, log the warning
-	} else {
-		equity, equityErr := uc.broker.GetPortfolioEquity(ctx)
-		if equityErr == nil && equity > 0 {
-			dailyLossPct := -dailyPnL / equity
-			if dailyLossPct >= uc.riskRules.MaxDailyLossPct {
-				reason := fmt.Sprintf("daily loss limit reached: %.2f%%", dailyLossPct*100)
-				log.Warn("place_order.daily_loss_limit_hit", zap.String("reason", reason))
-				return &PlaceOrderOutput{Signal: signal, Skipped: true, SkipReason: reason}, nil
-			}
-		}
-	}
-
-	// ── Step 4: Position sizing ─────────────────────────────
-	equity, err := uc.broker.GetPortfolioEquity(ctx)
+	// ── Step 3: Account state (one read, fail closed) ──────
+	acct, err := uc.broker.GetAccount(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting portfolio equity: %w", err)
 	}
-	qty := uc.riskRules.CalcPositionSize(equity, signal.Price)
-	if qty < 0.001 {
+	if acct.TradingBlocked {
+		return &PlaceOrderOutput{Signal: signal, Skipped: true, SkipReason: "broker account is blocked from trading"}, nil
+	}
+	if !acct.Equity.IsPositive() {
+		return &PlaceOrderOutput{Signal: signal, Skipped: true, SkipReason: "account equity is not positive"}, nil
+	}
+
+	// ── Step 4: Daily loss limit (equity vs previous close) ─
+	if acct.LastEquity.IsPositive() {
+		dailyLossPct := acct.DayPnL().Neg().Div(acct.LastEquity)
+		if dailyLossPct.GreaterThanOrEqual(decimal.NewFromFloat(uc.riskRules.MaxDailyLossPct)) {
+			reason := fmt.Sprintf("daily loss limit reached: %s%%", dailyLossPct.Mul(decimal.NewFromInt(100)).StringFixed(2))
+			log.Warn("place_order.daily_loss_limit_hit", zap.String("reason", reason))
+			return &PlaceOrderOutput{Signal: signal, Skipped: true, SkipReason: reason}, nil
+		}
+	}
+
+	// ── Step 5: Position sizing ─────────────────────────────
+	qty := uc.riskRules.CalcPositionSize(acct.Equity, signal.Price)
+	if qty.LessThan(minOrderQty) {
 		return &PlaceOrderOutput{Signal: signal, Skipped: true, SkipReason: "calculated quantity too small"}, nil
 	}
 
-	// ── Step 5: Build Order entity ─────────────────────────
+	// ── Step 6: Build Order entity ─────────────────────────
 	side := entities.OrderSideBuy
 	if signal.Direction == "SELL" {
 		side = entities.OrderSideSell
@@ -145,27 +150,22 @@ func (uc *PlaceOrderUseCase) Execute(ctx context.Context, input PlaceOrderInput)
 		return nil, fmt.Errorf("creating order entity: %w", err)
 	}
 
-	// ── Step 6: Persist pending ────────────────────────────
+	// ── Step 7: Persist pending ────────────────────────────
 	if saveErr := uc.orderRepo.Save(ctx, order); saveErr != nil {
 		return nil, fmt.Errorf("saving order: %w", saveErr)
 	}
 
-	// ── Step 7: Submit to broker ───────────────────────────
-	brokerID, err := uc.broker.SubmitOrder(ctx, order)
+	// ── Step 8: Submit to broker (order ID = client order ID) ─
+	placed, err := uc.submit(ctx, order, log)
 	if err != nil {
-		// Transition to rejected and persist
-		rejected := order.Transition(entities.OrderStatusRejected)
-		_ = uc.orderRepo.Update(ctx, rejected)
-		return nil, fmt.Errorf("broker rejected order: %w", err)
+		return nil, err
 	}
-
-	submitted := order.MarkFilled(brokerID, signal.Price) // simplified: assume immediate fill for paper
-	submitted = submitted.Transition(entities.OrderStatusSubmitted)
+	submitted := order.ApplyBrokerState(placed.State())
 	if updateErr := uc.orderRepo.Update(ctx, submitted); updateErr != nil {
 		log.Error("place_order.update_failed", zap.Error(updateErr))
 	}
 
-	// ── Step 8: Publish event (Observer pattern) ───────────
+	// ── Step 9: Publish event (Observer pattern) ───────────
 	_ = uc.publisher.Publish(ctx, ports.DomainEvent{
 		Type:    "OrderPlaced",
 		Payload: submitted,
@@ -173,8 +173,9 @@ func (uc *PlaceOrderUseCase) Execute(ctx context.Context, input PlaceOrderInput)
 
 	log.Info("place_order.completed",
 		zap.String("order_id", submitted.ID.String()),
-		zap.String("broker_id", brokerID),
-		zap.Float64("qty", qty),
+		zap.String("broker_id", submitted.BrokerID),
+		zap.String("status", string(submitted.Status)),
+		zap.String("qty", qty.String()),
 	)
 
 	span.SetAttributes(attribute.String("order_id", submitted.ID.String()))
@@ -182,7 +183,45 @@ func (uc *PlaceOrderUseCase) Execute(ctx context.Context, input PlaceOrderInput)
 	return &PlaceOrderOutput{Order: submitted, Signal: signal, Skipped: false}, nil
 }
 
-func (uc *PlaceOrderUseCase) getDailyPnL(ctx context.Context) (float64, error) {
-	// This would call tradeRepo.GetDailyPnL — simplified for now
-	return 0, nil
+// minOrderQty is the smallest quantity worth submitting.
+var minOrderQty = decimal.RequireFromString("0.001")
+
+// lookupTimeout bounds the reconciliation lookup after an unknown submit outcome.
+const lookupTimeout = 5 * time.Second
+
+// submit sends the order. When the outcome is unknown (broker unavailable or
+// timed out) it looks the order up by client ID instead of guessing:
+//   - found: the broker has it — adopt the broker's state;
+//   - not found: it was never placed — mark it rejected;
+//   - lookup failed: leave it pending and return an error (needs reconciliation).
+func (uc *PlaceOrderUseCase) submit(ctx context.Context, order *entities.Order, log *zap.Logger) (ports.BrokerOrder, error) {
+	placed, err := uc.broker.SubmitOrder(ctx, ports.SubmitRequestFor(order))
+	if err == nil {
+		return placed, nil
+	}
+	if !errors.Is(err, ports.ErrUnavailable) {
+		uc.markRejected(ctx, order, log)
+		return ports.BrokerOrder{}, fmt.Errorf("broker rejected order: %w", err)
+	}
+
+	log.Warn("place_order.submit_outcome_unknown", zap.Error(err), zap.String("client_order_id", order.ClientOrderID()))
+	lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), lookupTimeout)
+	defer cancel()
+	found, lookupErr := uc.broker.GetOrderByClientID(lookupCtx, order.ClientOrderID())
+	switch {
+	case lookupErr == nil:
+		log.Info("place_order.submit_reconciled", zap.String("broker_id", found.ID))
+		return found, nil
+	case errors.Is(lookupErr, ports.ErrNotFound):
+		uc.markRejected(ctx, order, log)
+		return ports.BrokerOrder{}, fmt.Errorf("broker did not accept order: %w", err)
+	default:
+		return ports.BrokerOrder{}, fmt.Errorf("order outcome unknown, left pending for reconciliation: %w", err)
+	}
+}
+
+func (uc *PlaceOrderUseCase) markRejected(ctx context.Context, order *entities.Order, log *zap.Logger) {
+	if err := uc.orderRepo.Update(context.WithoutCancel(ctx), order.Transition(entities.OrderStatusRejected)); err != nil {
+		log.Error("place_order.update_failed", zap.Error(err))
+	}
 }

@@ -10,43 +10,45 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 
 	"github.com/trading-bot/bot-engine/internal/application/usecases"
 	"github.com/trading-bot/bot-engine/internal/domain/entities"
 	"github.com/trading-bot/bot-engine/internal/domain/ports"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/auth"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/broker/fakebroker"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/config"
 )
 
 // ── fakes ──
 
 type fakeBroker struct {
-	submitted int
-	fail      error // when set, read calls fail with this (raw broker) error
+	*fakebroker.Broker
+	fail error // when set, read calls fail with this (raw broker) error
 }
 
-func (b *fakeBroker) SubmitOrder(context.Context, *entities.Order) (string, error) {
-	b.submitted++
-	return "fake-1", nil
+func newFakeBroker() *fakeBroker {
+	b := &fakeBroker{Broker: fakebroker.New(decimal.NewFromInt(100000))}
+	b.SetPositions([]entities.Position{{Symbol: "AAPL", Quantity: decimal.NewFromInt(1)}})
+	return b
 }
-func (b *fakeBroker) CancelOrder(context.Context, string) error { return nil }
-func (b *fakeBroker) GetOrderStatus(context.Context, string) (entities.OrderStatus, float64, error) {
-	return entities.OrderStatusFilled, 0, nil
-}
-func (b *fakeBroker) GetPortfolioEquity(context.Context) (float64, error) {
+
+func (b *fakeBroker) submitted() int { return len(b.Submitted) }
+
+func (b *fakeBroker) GetAccount(ctx context.Context) (ports.Account, error) {
 	if b.fail != nil {
-		return 0, b.fail
+		return ports.Account{}, b.fail
 	}
-	return 100000, nil
+	return b.Broker.GetAccount(ctx)
 }
-func (b *fakeBroker) GetPositions(context.Context) ([]entities.Position, error) {
+
+func (b *fakeBroker) GetPositions(ctx context.Context) ([]entities.Position, error) {
 	if b.fail != nil {
 		return nil, b.fail
 	}
-	return []entities.Position{{Symbol: "AAPL", Quantity: 1}}, nil
+	return b.Broker.GetPositions(ctx)
 }
-func (b *fakeBroker) IsMarketOpen(context.Context) (bool, error) { return true, nil }
 
 type holdSignals struct{}
 
@@ -105,7 +107,7 @@ func newEnv(t *testing.T, execEnabled bool) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := &fakeBroker{}
+	b := newFakeBroker()
 	h := &fakeHub{}
 	uc := usecases.NewPlaceOrderUseCase(b, nopRepo{}, holdSignals{}, nopPub{}, entities.DefaultRiskRules(), zap.NewNop())
 	r := NewRouter(Deps{Config: cfg, Tokens: store, PlaceOrder: uc, Broker: b, Hub: h, Registry: prometheus.NewRegistry(), Logger: zap.NewNop()})
@@ -160,7 +162,7 @@ func TestProtectedRoutesRequireToken(t *testing.T) {
 			}
 		}
 	}
-	if e.broker.submitted != 0 {
+	if e.broker.submitted() != 0 {
 		t.Fatal("no order may reach the broker without auth")
 	}
 }
@@ -187,7 +189,7 @@ func TestAgentTokenRejectedOnWriteRoutes(t *testing.T) {
 				t.Errorf("exec=%v %s %s with agent token: got %d, want 403", exec, r.Method, r.Path, w.Code)
 			}
 		}
-		if e.broker.submitted != 0 {
+		if e.broker.submitted() != 0 {
 			t.Fatal("agent token reached the broker")
 		}
 	}
@@ -199,7 +201,7 @@ func TestOrderRouteDisabledByDefault(t *testing.T) {
 	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "execution_disabled") {
 		t.Fatalf("got %d %s, want 403 execution_disabled", w.Code, w.Body.String())
 	}
-	if e.broker.submitted != 0 {
+	if e.broker.submitted() != 0 {
 		t.Fatal("order reached the broker while execution is disabled")
 	}
 }
@@ -254,7 +256,7 @@ func TestUnverifiedConfigReportsUnverified(t *testing.T) {
 	cfg := &config.Config{PaperTrading: true, AlpacaBaseURL: "https://api.alpaca.markets"}
 	_ = cfg.Validate()
 	store, _ := auth.NewStore([]*auth.Principal{{ID: "o", Type: auth.ActorHuman, SHA256: auth.HashToken("t"), Scopes: []string{auth.ScopePortfolioRead}}})
-	r := NewRouter(Deps{Config: cfg, Tokens: store, Broker: &fakeBroker{}, Hub: &fakeHub{}, Registry: prometheus.NewRegistry(), Logger: zap.NewNop()})
+	r := NewRouter(Deps{Config: cfg, Tokens: store, Broker: newFakeBroker(), Hub: &fakeHub{}, Registry: prometheus.NewRegistry(), Logger: zap.NewNop()})
 	req := httptest.NewRequest("GET", "/api/v1/portfolio/equity", nil)
 	req.Header.Set("Authorization", "Bearer t")
 	w := httptest.NewRecorder()

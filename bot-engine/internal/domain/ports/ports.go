@@ -7,6 +7,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/trading-bot/bot-engine/internal/domain/entities"
 )
 
@@ -16,7 +18,7 @@ type Signal struct {
 	Symbol       string
 	Direction    string // "BUY", "SELL", "HOLD"
 	Strength     string // "STRONG", "MODERATE", "WEAK"
-	Price        float64
+	Price        decimal.Decimal
 	Confidence   float64
 	Reason       string
 	StrategyName string
@@ -28,24 +30,6 @@ type Signal struct {
 type DomainEvent struct {
 	Type    string      // e.g. "OrderPlaced", "OrderFilled"
 	Payload interface{} // the event data (usually an entity)
-}
-
-// BrokerPort is the outbound port for interacting with a trading broker.
-//
-//go:generate mockgen -destination=../../../infrastructure/broker/mock_broker.go -package=broker . BrokerPort
-type BrokerPort interface {
-	// SubmitOrder sends an order to the broker and returns its broker-assigned ID.
-	SubmitOrder(ctx context.Context, order *entities.Order) (brokerID string, err error)
-	// CancelOrder cancels a submitted order by its broker-assigned ID.
-	CancelOrder(ctx context.Context, brokerID string) error
-	// GetOrderStatus polls the broker for the current order status and fill price.
-	GetOrderStatus(ctx context.Context, brokerID string) (entities.OrderStatus, float64, error)
-	// GetPortfolioEquity returns the current total equity of the account.
-	GetPortfolioEquity(ctx context.Context) (float64, error)
-	// GetPositions returns all currently open positions.
-	GetPositions(ctx context.Context) ([]entities.Position, error)
-	// IsMarketOpen returns true when the market is open for trading.
-	IsMarketOpen(ctx context.Context) (bool, error)
 }
 
 // OrderRepositoryPort is the outbound port for persisting and querying orders.

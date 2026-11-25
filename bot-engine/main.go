@@ -54,10 +54,17 @@ func main() {
 	)
 
 	// ── Infrastructure layer ─────────────────────────────────
-	alpacaBroker := broker.NewAlpacaBroker(cfg, logger)
-	signalSvc    := signalclient.New(cfg.SignalServiceURL, cfg.SignalServiceToken, logger)
-	bus          := eventbus.New(logger)
-	hub          := messaging.NewWSHub(logger)
+	// ADR-004: the adapter verifies paper mode against Alpaca itself and refuses
+	// to start otherwise (fail closed).
+	verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 2*broker.RequestTimeout)
+	alpacaBroker, err := broker.NewAlpacaBroker(verifyCtx, cfg, logger)
+	verifyCancel()
+	if err != nil {
+		logger.Fatal("broker.init_failed", zap.Error(err))
+	}
+	signalSvc := signalclient.New(cfg.SignalServiceURL, cfg.SignalServiceToken, logger)
+	bus := eventbus.New(logger)
+	hub := messaging.NewWSHub(logger)
 
 	// Wire events to WebSocket broadcasts
 	bus.Subscribe("OrderPlaced", hub.HandleDomainEvent)
@@ -65,8 +72,8 @@ func main() {
 
 	// ── Application layer ────────────────────────────────────
 	// In-memory order repo (swap for PostgreSQL repo in production)
-	orderRepo    := repository.NewInMemoryOrderRepo()
-	riskRules    := entities.DefaultRiskRules()
+	orderRepo := repository.NewInMemoryOrderRepo()
+	riskRules := entities.DefaultRiskRules()
 	if err := riskRules.Validate(); err != nil {
 		logger.Fatal("risk_rules.invalid", zap.Error(err))
 	}

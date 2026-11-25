@@ -3,8 +3,10 @@ package usecases_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -12,31 +14,10 @@ import (
 	"github.com/trading-bot/bot-engine/internal/application/usecases"
 	"github.com/trading-bot/bot-engine/internal/domain/entities"
 	"github.com/trading-bot/bot-engine/internal/domain/ports"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/broker/fakebroker"
 )
 
 // ── Manual mocks (no generated code needed for unit tests) ──
-
-type mockBroker struct {
-	equity    float64
-	equityErr error
-	brokerID  string
-	submitErr error
-}
-
-func (m *mockBroker) SubmitOrder(_ context.Context, _ *entities.Order) (string, error) {
-	return m.brokerID, m.submitErr
-}
-func (m *mockBroker) CancelOrder(_ context.Context, _ string) error        { return nil }
-func (m *mockBroker) GetOrderStatus(_ context.Context, _ string) (entities.OrderStatus, float64, error) {
-	return entities.OrderStatusFilled, 150.0, nil
-}
-func (m *mockBroker) GetPortfolioEquity(_ context.Context) (float64, error) {
-	return m.equity, m.equityErr
-}
-func (m *mockBroker) GetPositions(_ context.Context) ([]entities.Position, error) {
-	return nil, nil
-}
-func (m *mockBroker) IsMarketOpen(_ context.Context) (bool, error) { return true, nil }
 
 type mockOrderRepo struct {
 	savedOrders   []*entities.Order
@@ -88,7 +69,7 @@ func buySignal() *ports.Signal {
 		Symbol:       "AAPL",
 		Direction:    "BUY",
 		Strength:     "STRONG",
-		Price:        150.0,
+		Price:        decimal.NewFromInt(150),
 		Confidence:   0.85,
 		Reason:       "RSI oversold",
 		StrategyName: "RSIStrategy(period=14)",
@@ -111,37 +92,71 @@ func buildUseCase(broker ports.BrokerPort, repo ports.OrderRepositoryPort, sig p
 	return usecases.NewPlaceOrderUseCase(broker, repo, sig, pub, rules, zap.NewNop())
 }
 
+// paperBroker returns a fake broker with the given equity that fills AAPL at $150.
+func paperBroker(equity int64) *fakebroker.Broker {
+	b := fakebroker.New(decimal.NewFromInt(equity))
+	b.SetFillPrice("AAPL", decimal.NewFromInt(150))
+	return b
+}
+
+func run(t *testing.T, uc *usecases.PlaceOrderUseCase) (*usecases.PlaceOrderOutput, error) {
+	t.Helper()
+	return uc.Execute(context.Background(), usecases.PlaceOrderInput{Symbol: "AAPL", Strategy: "rsi"})
+}
+
 // ── Tests ─────────────────────────────────────────────────────
 
 func TestPlaceOrder_SuccessfulBuy(t *testing.T) {
-	broker := &mockBroker{equity: 100_000, brokerID: "alpaca-123"}
+	broker := paperBroker(100_000)
 	repo := &mockOrderRepo{}
-	signals := &mockSignalService{signal: buySignal()}
 	publisher := &mockPublisher{}
 
-	uc := buildUseCase(broker, repo, signals, publisher, defaultRules())
-	out, err := uc.Execute(context.Background(), usecases.PlaceOrderInput{
-		Symbol: "AAPL", Strategy: "rsi",
-	})
+	out, err := run(t, buildUseCase(broker, repo, &mockSignalService{signal: buySignal()}, publisher, defaultRules()))
 
 	require.NoError(t, err)
 	assert.False(t, out.Skipped)
-	assert.NotNil(t, out.Order)
+	require.NotNil(t, out.Order)
 	assert.Equal(t, "AAPL", out.Order.Symbol)
 	assert.Equal(t, entities.OrderSideBuy, out.Order.Side)
+	assert.Equal(t, entities.OrderStatusFilled, out.Order.Status)
+	assert.Equal(t, "fake-1", out.Order.BrokerID)
+	// 5% of 100k at $150 = 33.333333 (truncated), filled at the broker's price.
+	assert.True(t, out.Order.Quantity.Equal(decimal.RequireFromString("33.333333")), out.Order.Quantity.String())
+	assert.True(t, out.Order.FilledQty.Equal(out.Order.Quantity))
+	require.NotNil(t, out.Order.FilledPrice)
+	assert.True(t, out.Order.FilledPrice.Equal(decimal.NewFromInt(150)))
 	assert.Len(t, repo.savedOrders, 1)
 	assert.Len(t, publisher.published, 1)
 	assert.Equal(t, "OrderPlaced", publisher.published[0].Type)
 }
 
+func TestPlaceOrder_SendsOrderIDAsClientOrderID(t *testing.T) {
+	broker := paperBroker(100_000)
+	out, err := run(t, buildUseCase(broker, &mockOrderRepo{}, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()))
+
+	require.NoError(t, err)
+	require.Len(t, broker.Submitted, 1)
+	assert.Equal(t, out.Order.ID.String(), broker.Submitted[0].ClientOrderID)
+	assert.Equal(t, entities.OrderTypeMarket, broker.Submitted[0].Type)
+}
+
+func TestPlaceOrder_WorkingOrderIsNotReportedAsFilled(t *testing.T) {
+	broker := fakebroker.New(decimal.NewFromInt(100_000)) // no fill price: order stays working
+	out, err := run(t, buildUseCase(broker, &mockOrderRepo{}, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()))
+
+	require.NoError(t, err)
+	assert.Equal(t, entities.OrderStatusSubmitted, out.Order.Status)
+	assert.Nil(t, out.Order.FilledPrice)
+	assert.Nil(t, out.Order.FilledAt)
+	assert.True(t, out.Order.FilledQty.IsZero())
+}
+
 func TestPlaceOrder_SkipsHoldSignal(t *testing.T) {
-	broker := &mockBroker{equity: 100_000}
+	broker := paperBroker(100_000)
 	repo := &mockOrderRepo{}
-	signals := &mockSignalService{signal: holdSignal()}
 	publisher := &mockPublisher{}
 
-	uc := buildUseCase(broker, repo, signals, publisher, defaultRules())
-	out, err := uc.Execute(context.Background(), usecases.PlaceOrderInput{Symbol: "AAPL", Strategy: "rsi"})
+	out, err := run(t, buildUseCase(broker, repo, &mockSignalService{signal: holdSignal()}, publisher, defaultRules()))
 
 	require.NoError(t, err)
 	assert.True(t, out.Skipped)
@@ -149,15 +164,14 @@ func TestPlaceOrder_SkipsHoldSignal(t *testing.T) {
 	assert.Nil(t, out.Order)
 	assert.Empty(t, repo.savedOrders)
 	assert.Empty(t, publisher.published)
+	assert.Empty(t, broker.Submitted)
 }
 
 func TestPlaceOrder_SkipsLowConfidence(t *testing.T) {
-	broker := &mockBroker{equity: 100_000}
 	sig := buySignal()
 	sig.Confidence = 0.30 // below default 0.60
 
-	uc := buildUseCase(broker, &mockOrderRepo{}, &mockSignalService{signal: sig}, &mockPublisher{}, defaultRules())
-	out, err := uc.Execute(context.Background(), usecases.PlaceOrderInput{Symbol: "AAPL", Strategy: "rsi"})
+	out, err := run(t, buildUseCase(paperBroker(100_000), &mockOrderRepo{}, &mockSignalService{signal: sig}, &mockPublisher{}, defaultRules()))
 
 	require.NoError(t, err)
 	assert.True(t, out.Skipped)
@@ -166,51 +180,117 @@ func TestPlaceOrder_SkipsLowConfidence(t *testing.T) {
 
 func TestPlaceOrder_ErrorFetchingSignal(t *testing.T) {
 	signals := &mockSignalService{err: errors.New("signal service down")}
-	uc := buildUseCase(&mockBroker{equity: 100_000}, &mockOrderRepo{}, signals, &mockPublisher{}, defaultRules())
-
-	_, err := uc.Execute(context.Background(), usecases.PlaceOrderInput{Symbol: "AAPL", Strategy: "rsi"})
+	_, err := run(t, buildUseCase(paperBroker(100_000), &mockOrderRepo{}, signals, &mockPublisher{}, defaultRules()))
 	assert.ErrorContains(t, err, "fetching signal")
 }
 
 func TestPlaceOrder_BrokerRejection(t *testing.T) {
-	broker := &mockBroker{equity: 100_000, submitErr: errors.New("insufficient funds")}
+	broker := paperBroker(100_000)
+	broker.FailSubmit = fmt.Errorf("alpaca place order: %w", ports.ErrInsufficientFunds)
 	repo := &mockOrderRepo{}
-	signals := &mockSignalService{signal: buySignal()}
 
-	uc := buildUseCase(broker, repo, signals, &mockPublisher{}, defaultRules())
-	_, err := uc.Execute(context.Background(), usecases.PlaceOrderInput{Symbol: "AAPL", Strategy: "rsi"})
+	_, err := run(t, buildUseCase(broker, repo, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()))
 
 	assert.ErrorContains(t, err, "broker rejected")
-	// Should have saved then updated to rejected
+	assert.ErrorIs(t, err, ports.ErrInsufficientFunds)
 	require.Len(t, repo.savedOrders, 1)
 	require.Len(t, repo.updatedOrders, 1)
 	assert.Equal(t, entities.OrderStatusRejected, repo.updatedOrders[0].Status)
 }
 
+func TestPlaceOrder_UnknownOutcomeIsReconciledByClientID(t *testing.T) {
+	broker := paperBroker(100_000)
+	broker.SubmitThenFail = fmt.Errorf("alpaca place order: %w: %w", ports.ErrUnavailable, context.DeadlineExceeded)
+	repo := &mockOrderRepo{}
+
+	out, err := run(t, buildUseCase(broker, repo, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()))
+
+	require.NoError(t, err, "the broker has the order, so the submission succeeded")
+	assert.Equal(t, "fake-1", out.Order.BrokerID)
+	assert.Equal(t, entities.OrderStatusFilled, out.Order.Status)
+	assert.Len(t, broker.Submitted, 1, "never resubmitted")
+}
+
+func TestPlaceOrder_UnknownOutcomeNotAtBrokerIsRejected(t *testing.T) {
+	broker := paperBroker(100_000)
+	broker.FailSubmit = fmt.Errorf("alpaca place order: %w", ports.ErrUnavailable) // never recorded
+	repo := &mockOrderRepo{}
+
+	_, err := run(t, buildUseCase(broker, repo, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()))
+
+	assert.ErrorContains(t, err, "did not accept")
+	require.Len(t, repo.updatedOrders, 1)
+	assert.Equal(t, entities.OrderStatusRejected, repo.updatedOrders[0].Status)
+}
+
+func TestPlaceOrder_UnknownOutcomeAndFailedLookupStaysPending(t *testing.T) {
+	broker := paperBroker(100_000)
+	broker.FailSubmit = fmt.Errorf("alpaca place order: %w", ports.ErrUnavailable)
+	broker.FailGet = fmt.Errorf("alpaca get order by client ID: %w", ports.ErrUnavailable)
+	repo := &mockOrderRepo{}
+
+	_, err := run(t, buildUseCase(broker, repo, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()))
+
+	assert.ErrorContains(t, err, "outcome unknown")
+	require.Len(t, repo.savedOrders, 1)
+	assert.Empty(t, repo.updatedOrders, "not marked rejected: the order may exist at the broker")
+}
+
 func TestPlaceOrder_RepoSaveFailure(t *testing.T) {
 	repo := &mockOrderRepo{saveErr: errors.New("db connection lost")}
-	uc := buildUseCase(&mockBroker{equity: 100_000}, repo, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules())
-
-	_, err := uc.Execute(context.Background(), usecases.PlaceOrderInput{Symbol: "AAPL", Strategy: "rsi"})
+	broker := paperBroker(100_000)
+	_, err := run(t, buildUseCase(broker, repo, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()))
 	assert.ErrorContains(t, err, "saving order")
+	assert.Empty(t, broker.Submitted)
 }
 
 func TestPlaceOrder_EquityFetchFailure(t *testing.T) {
-	broker := &mockBroker{equityErr: errors.New("account unavailable")}
-	uc := buildUseCase(broker, &mockOrderRepo{}, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules())
-
-	_, err := uc.Execute(context.Background(), usecases.PlaceOrderInput{Symbol: "AAPL", Strategy: "rsi"})
+	broker := paperBroker(100_000)
+	broker.FailAccount = fmt.Errorf("alpaca get account: %w", ports.ErrUnavailable)
+	_, err := run(t, buildUseCase(broker, &mockOrderRepo{}, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()))
 	assert.ErrorContains(t, err, "portfolio equity")
+	assert.Empty(t, broker.Submitted)
+}
+
+func TestPlaceOrder_DailyLossLimitStopsTrading(t *testing.T) {
+	broker := paperBroker(100_000)
+	broker.SetAccount(ports.Account{ // down 2.5% since the previous close; limit is 2%
+		Equity: decimal.NewFromInt(97_500), LastEquity: decimal.NewFromInt(100_000), BuyingPower: decimal.NewFromInt(97_500),
+	})
+	out, err := run(t, buildUseCase(broker, &mockOrderRepo{}, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()))
+
+	require.NoError(t, err)
+	assert.True(t, out.Skipped)
+	assert.Contains(t, out.SkipReason, "daily loss limit reached: 2.50%")
+	assert.Empty(t, broker.Submitted)
+}
+
+func TestPlaceOrder_DailyLossBelowLimitTrades(t *testing.T) {
+	broker := paperBroker(100_000)
+	broker.SetAccount(ports.Account{ // down 1%
+		Equity: decimal.NewFromInt(99_000), LastEquity: decimal.NewFromInt(100_000), BuyingPower: decimal.NewFromInt(99_000),
+	})
+	out, err := run(t, buildUseCase(broker, &mockOrderRepo{}, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()))
+
+	require.NoError(t, err)
+	assert.False(t, out.Skipped)
+}
+
+func TestPlaceOrder_BlockedAccountSkips(t *testing.T) {
+	broker := paperBroker(100_000)
+	broker.SetAccount(ports.Account{Equity: decimal.NewFromInt(100_000), LastEquity: decimal.NewFromInt(100_000), TradingBlocked: true})
+	out, err := run(t, buildUseCase(broker, &mockOrderRepo{}, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()))
+
+	require.NoError(t, err)
+	assert.True(t, out.Skipped)
+	assert.Contains(t, out.SkipReason, "blocked")
+	assert.Empty(t, broker.Submitted)
 }
 
 func TestPlaceOrder_SellSignal(t *testing.T) {
 	sig := buySignal()
 	sig.Direction = "SELL"
-	broker := &mockBroker{equity: 100_000, brokerID: "alpaca-456"}
-	repo := &mockOrderRepo{}
-
-	uc := buildUseCase(broker, repo, &mockSignalService{signal: sig}, &mockPublisher{}, defaultRules())
-	out, err := uc.Execute(context.Background(), usecases.PlaceOrderInput{Symbol: "AAPL", Strategy: "rsi"})
+	out, err := run(t, buildUseCase(paperBroker(100_000), &mockOrderRepo{}, &mockSignalService{signal: sig}, &mockPublisher{}, defaultRules()))
 
 	require.NoError(t, err)
 	assert.False(t, out.Skipped)
@@ -218,18 +298,13 @@ func TestPlaceOrder_SellSignal(t *testing.T) {
 }
 
 func TestPlaceOrder_PositionSizingUsesRiskRules(t *testing.T) {
-	broker := &mockBroker{equity: 10_000, brokerID: "b-1"} // small account
-	repo := &mockOrderRepo{}
 	rules := defaultRules()
-	rules.MaxPositionSizePct = 0.01 // only 1% = $100 / $150 = 0.66 shares
+	rules.MaxPositionSizePct = 0.01 // 1% of $10k = $100 / $150 = 0.666666 shares
 
-	uc := buildUseCase(broker, repo, &mockSignalService{signal: buySignal()}, &mockPublisher{}, rules)
-	out, err := uc.Execute(context.Background(), usecases.PlaceOrderInput{Symbol: "AAPL", Strategy: "rsi"})
+	out, err := run(t, buildUseCase(paperBroker(10_000), &mockOrderRepo{}, &mockSignalService{signal: buySignal()}, &mockPublisher{}, rules))
 
 	require.NoError(t, err)
-	// qty ≈ 0.66 — above minimum 0.001 so it should execute
 	assert.False(t, out.Skipped)
-	if out.Order != nil {
-		assert.Less(t, out.Order.Quantity, 1.0)
-	}
+	require.NotNil(t, out.Order)
+	assert.True(t, out.Order.Quantity.Equal(decimal.RequireFromString("0.666666")), out.Order.Quantity.String())
 }

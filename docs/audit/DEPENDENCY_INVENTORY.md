@@ -36,7 +36,7 @@ Direct requirements (`bot-engine/go.mod:5-15`), pinned by `go.sum`:
 | github.com/google/uuid | v1.6.0 | Yes |
 | github.com/gorilla/websocket | v1.5.1 | Yes |
 | github.com/prometheus/client_golang | v1.19.1 | Yes |
-| github.com/shopspring/decimal | v1.3.1 | Adapter only (domain uses float64, TD-21) |
+| github.com/shopspring/decimal | v1.3.1 | Domain money and quantities (BL-18, TD-21 resolved) |
 | github.com/stretchr/testify | v1.9.0 | Tests |
 | go.opentelemetry.io/otel | v1.24.0 | API only, no SDK/exporter (TD-14) |
 | go.uber.org/zap | v1.27.0 | Yes |

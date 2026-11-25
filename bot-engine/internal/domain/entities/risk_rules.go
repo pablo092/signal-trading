@@ -4,7 +4,13 @@ package entities
 import (
 	"fmt"
 	"math"
+
+	"github.com/shopspring/decimal"
 )
+
+// QtyScale is the number of decimal places kept in a computed share quantity.
+// Sizing truncates (never rounds up), so a position never exceeds its cap.
+const QtyScale = 6
 
 // RiskRules encapsulates all risk management parameters for a strategy.
 // Applied before every order is submitted to enforce capital protection.
@@ -67,28 +73,31 @@ func (r RiskRules) Validate() error {
 }
 
 // CalcPositionSize returns the number of shares to buy given portfolio equity
-// and entry price, respecting MaxPositionSizePct.
-func (r RiskRules) CalcPositionSize(portfolioEquity, entryPrice float64) float64 {
-	if !(entryPrice > 0) || !(portfolioEquity > 0) || // also false for NaN
-		math.IsInf(entryPrice, 0) || math.IsInf(portfolioEquity, 0) {
-		return 0
+// and entry price, respecting MaxPositionSizePct. The result is truncated to
+// QtyScale decimals; non-positive inputs give zero.
+func (r RiskRules) CalcPositionSize(portfolioEquity, entryPrice decimal.Decimal) decimal.Decimal {
+	if !entryPrice.IsPositive() || !portfolioEquity.IsPositive() {
+		return decimal.Zero
 	}
-	maxDollars := portfolioEquity * r.MaxPositionSizePct
-	return maxDollars / entryPrice
+	maxDollars := portfolioEquity.Mul(pct(r.MaxPositionSizePct))
+	return maxDollars.DivRound(entryPrice, QtyScale+2).Truncate(QtyScale)
 }
 
 // StopLossPrice returns the stop-loss price given an entry price and side.
-func (r RiskRules) StopLossPrice(entryPrice float64, side OrderSide) float64 {
+func (r RiskRules) StopLossPrice(entryPrice decimal.Decimal, side OrderSide) decimal.Decimal {
 	if side == OrderSideBuy {
-		return entryPrice * (1 - r.StopLossPct)
+		return entryPrice.Mul(decimal.NewFromInt(1).Sub(pct(r.StopLossPct)))
 	}
-	return entryPrice * (1 + r.StopLossPct)
+	return entryPrice.Mul(decimal.NewFromInt(1).Add(pct(r.StopLossPct)))
 }
 
 // TakeProfitPrice returns the take-profit price given an entry price and side.
-func (r RiskRules) TakeProfitPrice(entryPrice float64, side OrderSide) float64 {
+func (r RiskRules) TakeProfitPrice(entryPrice decimal.Decimal, side OrderSide) decimal.Decimal {
 	if side == OrderSideBuy {
-		return entryPrice * (1 + r.TakeProfitPct)
+		return entryPrice.Mul(decimal.NewFromInt(1).Add(pct(r.TakeProfitPct)))
 	}
-	return entryPrice * (1 - r.TakeProfitPct)
+	return entryPrice.Mul(decimal.NewFromInt(1).Sub(pct(r.TakeProfitPct)))
 }
+
+// pct converts a validated (finite) percentage parameter to decimal.
+func pct(v float64) decimal.Decimal { return decimal.NewFromFloat(v) }

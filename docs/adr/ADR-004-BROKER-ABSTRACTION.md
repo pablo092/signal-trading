@@ -73,6 +73,31 @@ Market data stays a separate port in signal-service. It is **not** merged into `
 - **Third-party multi-broker library:** adds an opaque dependency at the most sensitive boundary, and is not needed for one broker.
 - **Separate broker-gateway service:** adds a network hop and a deployable, and conflicts with the "reduce complexity" principle. The port already gives the isolation.
 
+## Implementation notes (BL-18, 2026-11-24)
+
+Implemented in `bot-engine/internal/domain/ports/broker.go`, the Alpaca adapter, and
+`internal/infrastructure/broker/fakebroker`. Differences from the proposal above:
+
+- **`StreamTradeUpdates` is not in the port yet.** It arrives with the fill reconciler (BL-23);
+  `Capabilities().TradeStreaming` reports `false` until then.
+- **Mode verification** happens in `NewAlpacaBroker`: config must be a verified paper deployment
+  *and* the account Alpaca returns for the keys must be a paper account (number prefixed `PA`).
+  Any mismatch, or failure to reach Alpaca, stops the engine at startup.
+- **Unknown submit outcome.** When `SubmitOrder` fails with `ErrUnavailable` (timeout, 5xx),
+  the use case looks the order up by client ID (the order's UUID) instead of resubmitting:
+  found → adopt the broker's state; `ErrNotFound` → rejected; lookup failed → left `pending`.
+- **No assumed fills.** Order status, filled quantity and average price come only from the broker.
+- **Typed errors** add `ErrInvalidOrder` (local validation) and `ErrNotFound`. Error strings keep the
+  Alpaca message and code but never the response body.
+- **ctx and timeouts.** Each Alpaca request is bounded by a 10 s HTTP client timeout, and every call
+  returns as soon as ctx ends. The circuit breaker is still not wired (TD-24).
+- **Money** is `decimal.Decimal` in the domain and ports. Risk percentages stay `float64` (validated
+  config) and are converted at use. Position sizing truncates to 6 decimals, so a position never
+  exceeds its cap. HTTP responses still emit JSON numbers until the contracts are versioned (BL-16).
+- **`CancelAllOrders`** exists on the port but is not routed; the `admin:killswitch` endpoint is BL-19.
+- Answers to the open questions below for now: shorting and fractional shares are both reported as
+  supported by the Alpaca adapter; the risk engine (BL-22) decides whether to use them.
+
 ## Open questions
 - Is shorting ever in scope? This determines the default for `Capabilities().Shorting` in risk checks.
 - Are fractional shares expected? Current sizing produces fractional quantities (`risk_rules.go:51-57`).
