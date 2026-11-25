@@ -30,7 +30,7 @@ Exit criteria:
 |---|---|---|---|---|
 | BL-14 | Postgres order repository with migrations (e.g. `golang-migrate`) and append-only `audit_events` | TD-05 | L | BL-13 |
 | BL-07 | Fake broker plus order-path handler and use-case integration tests | TD-23, ADR-004 | M | BL-18 |
-| BL-09 | Risk-rules unit tests (sizing, SL/TP prices, `Validate`) before the refactor | TD-23 | S | — |
+| BL-09 ✅ | Risk-rules unit tests (sizing, SL/TP prices, `Validate`) before the refactor | TD-23 | S | — |
 | BL-15 | WebSocket hub: single-writer pump, server-side client IDs, authenticated upgrade, origin allowlist, `-race` tests | TD-11, SEC-06 | M | BL-06 |
 | BL-16 | `contracts/` (OpenAPI and WS event JSON Schema) plus contract tests in Go, Python, and Dart; fix app ↔ engine event mismatch | TD-12, ADR-001 | M | BL-15 |
 | BL-17 | OTel OTLP exporters → Jaeger; increment `signals_generated_total`; register WS-clients gauge; numeric status labels; single-worker or multiprocess metrics | TD-14 | M | — |
@@ -43,6 +43,7 @@ Exit criteria:
 | ID | Item | Fixes | Effort | Depends on |
 |---|---|---|---|---|
 | BL-21 | Order-intent API, state machine, `Idempotency-Key`, mandatory human approval, TTL expiry; deprecate `/orders/place` | TD-03, ADR-005 §5.3–5.4 | L | BL-14, BL-18, BL-19 |
+| BL-21a | Order path gaps found by BL-09: enforce `MaxOpenPositions` (validated but never checked) and fail closed when the daily-P&L check errors (today it continues) | TD-23 | S | BL-21 |
 | BL-22 | Fail-closed risk engine with full checklist (ADR-005 §5.5), evaluated at creation and before submission | TD-04 | M | BL-21 |
 | BL-23 | Fill reconciler via Alpaca trade updates; publish `OrderFilled`; correct the order state machine | TD-06 | M | BL-18 |
 | BL-24 | Deployment manifests: engine `replicas: 1` / `Recreate` / no HPA, secrets out of ConfigMaps, real images, NetworkPolicy | TD-17 | M | — |
