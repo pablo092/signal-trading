@@ -19,9 +19,10 @@ Exit criteria:
 | BL-06 ✅ | `ORDER_EXECUTION_ENABLED=false` by default; scoped service-token middleware in both services; bind host ports to `127.0.0.1` | TD-01, TD-20, ADR-003 | M | BL-05 | Order route returns 403 by default; requests without a token get 401; route-scope table test |
 | BL-08 ✅ | Non-blocking Alpaca data calls with timeout, computed `start` window, TTL cache (in-process per worker instead of Redis: Redis is otherwise unused; swap behind the adapter if needed) | TD-13 | S | BL-02 | Concurrent requests not serialized (test); timeout returns 503 |
 | BL-10 ✅ | `agent-gateway/` MCP server (Python, STDIO) with read-only tools from TARGET_ARCHITECTURE §4, an audit log line per call, and per-agent rate limit | ADR-002 | M | BL-06, BL-08 | Tool calls work from at least one MCP client; the gateway token is rejected on any write route |
-| BL-11 | Align docs: README to current architecture; delete `signal-service/docker-compose.yml`; un-ignore and update `.env.example`; fix Makefile Fly app names | TD-10, TD-15 | S | — | README quick start works from a fresh clone |
-| BL-13 | Compose hardening: no password fallbacks, pinned images, drop `--web.enable-lifecycle`, Redis password, unused infra moved to `profiles: [full]` | TD-16 | S | BL-11 | `docker compose up` starts only the needed services by default |
-| BL-12 | Dependency scanning: `pip-audit`, `govulncheck`, Dart `pub outdated`/OSV in CI | SEC-13 | S | BL-01 | Scan job runs; findings triaged |
+| BL-11 ✅ | Align docs: README to current architecture; delete `signal-service/docker-compose.yml`; un-ignore and update `.env.example`; fix Makefile Fly app names | TD-10, TD-15 | S | — | README quick start works from a fresh clone |
+| BL-13 ✅ | Compose hardening: no password fallbacks, pinned images, drop `--web.enable-lifecycle`, Redis password, unused infra moved to `profiles: [full]` | TD-16 | S | BL-11 | `docker compose up` starts only the needed services by default |
+| BL-12 ✅ | Dependency scanning: `pip-audit`, `govulncheck`, Dart `pub outdated`/OSV in CI | SEC-13 | S | BL-01 | Scan job runs; findings triaged |
+| BL-12a | Upgrade bot-engine to Go 1.26 and `golang.org/x/net` v0.60 / `x/text` v0.39 (9 reachable govulncheck findings, see docs/security/DEPENDENCY_SCAN.md) | SEC-13 | S | BL-12 | `make audit-go` clean |
 
 ## M2: Persistence, observability, and safety primitives
 

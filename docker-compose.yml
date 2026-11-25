@@ -1,21 +1,17 @@
 # ════════════════════════════════════════════════════════════════
-# Trading Bot — full local development stack
+# Signal Trading — local development stack
 #
-#   signal-service  (Python FastAPI)   → http://localhost:8000
-#     Swagger UI                       → http://localhost:8000/docs
-#   bot-engine      (Go Gin)           → http://localhost:8080
-#     WebSocket                        → ws://localhost:8080/ws
-#   PostgreSQL                         → localhost:5432
-#   TimescaleDB                        → localhost:5433
-#   Redis                              → localhost:6379
-#   RabbitMQ + UI                      → localhost:5672 / :15672
-#   Prometheus                         → http://localhost:9090
-#   Grafana                            → http://localhost:3000
-#   Jaeger UI                          → http://localhost:16686
+# Default (`docker compose up -d`): only what the code uses today.
+#   signal-service  (Python FastAPI)   → http://127.0.0.1:8000  (Swagger: /docs)
+#   bot-engine      (Go Gin)           → http://127.0.0.1:8080  (WebSocket: /ws)
 #
-# Usage:
-#   cp .env.example .env          # fill in ALPACA keys
-#   docker compose up -d
+# Optional infrastructure (`docker compose --profile full up -d`): not used by any
+# service yet (persistence and messaging arrive in M2). Requires the passwords below.
+#   PostgreSQL :5432 · TimescaleDB :5433 · Redis :6379 · RabbitMQ UI :15672
+#   Prometheus :9090 · Grafana :3000 · Loki :3100 · Jaeger UI :16686
+#
+# Every port binds to 127.0.0.1. Copy .env.example to .env and fill it in first.
+# No credential has a default: missing values fail fast (BL-13).
 # ════════════════════════════════════════════════════════════════
 
 x-logging: &default-logging
@@ -25,13 +21,17 @@ x-logging: &default-logging
     max-file: "3"
 
 x-common-env: &common-env
-  ALPACA_API_KEY:    ${ALPACA_API_KEY}
-  ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY}
+  ALPACA_API_KEY:    ${ALPACA_API_KEY:?set ALPACA_API_KEY (paper key) in .env}
+  ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:?set ALPACA_SECRET_KEY (paper key) in .env}
   PAPER_TRADING:     "true"
+
+# Optional infra fails fast too, but only when the `full` profile is used:
+# Compose interpolates every service, so these use `-` (empty) here and each
+# container refuses to start with an empty password.
 
 services:
 
-  # ── Application Services ──────────────────────────────────────
+  # ── Application services (default) ────────────────────────────
 
   signal-service:
     build:
@@ -41,22 +41,16 @@ services:
     container_name: signal-service
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8000:8000"   # localhost only (BL-06)
+      - "127.0.0.1:8000:8000"
     environment:
       <<: *common-env
-      ENVIRONMENT:    ${ENVIRONMENT:-development}
-      LOG_LEVEL:      ${LOG_LEVEL:-DEBUG}
-      AUTH_TOKENS:    ${SERVICE_AUTH_TOKENS:-}
+      ENVIRONMENT:      ${ENVIRONMENT:-development}
+      LOG_LEVEL:        ${LOG_LEVEL:-DEBUG}
+      # ADR-003: scoped token table (sha256 digests), shared with bot-engine.
+      # Empty = every API call is 401. See docs/runbooks/SERVICE_TOKENS.md.
+      AUTH_TOKENS:      ${SERVICE_AUTH_TOKENS:-}
       ALPACA_DATA_FEED: ${ALPACA_DATA_FEED:-iex}
-      REDIS_URL:      redis://redis:6379/0
-      DATABASE_URL:   postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/tradingbot
-      JAEGER_ENDPOINT: http://jaeger:14268/api/traces
-      METRICS_ENABLED: "true"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      METRICS_ENABLED:  "true"
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health/live').raise_for_status()"]
       interval: 30s
@@ -78,7 +72,7 @@ services:
     container_name: bot-engine
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"   # localhost only (BL-06)
+      - "127.0.0.1:8080:8080"
     environment:
       <<: *common-env
       ENV:                development
@@ -86,8 +80,6 @@ services:
       ALPACA_BASE_URL:    https://paper-api.alpaca.markets
       # ADR-005 §5.2: order routes return 403 unless explicitly enabled.
       ORDER_EXECUTION_ENABLED: ${ORDER_EXECUTION_ENABLED:-false}
-      # ADR-003: scoped token table (JSON with sha256 digests), shared with signal-service.
-      # Empty = every API call is 401. See docs/runbooks/SERVICE_TOKENS.md.
       AUTH_TOKENS:        ${SERVICE_AUTH_TOKENS:-}
       # bot-engine's own plaintext token for calling signal-service (needs market:read).
       SIGNAL_SERVICE_TOKEN: ${BOT_ENGINE_SIGNAL_TOKEN:-}
@@ -109,21 +101,22 @@ services:
       - "prometheus.port=8080"
       - "prometheus.path=/metrics"
 
-  # ── Databases ─────────────────────────────────────────────────
+  # ── Databases (profile: full) ─────────────────────────────────
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.6-alpine
+    profiles: [full]
     container_name: postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER:     postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD-}   # image refuses to init when empty
       POSTGRES_DB:       tradingbot
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -134,17 +127,18 @@ services:
       - tradingbot-net
 
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    image: timescale/timescaledb:2.17.2-pg16
+    profiles: [full]
     container_name: timescaledb
     restart: unless-stopped
     environment:
       POSTGRES_USER:     postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD-}
       POSTGRES_DB:       tradingbot_ts
     volumes:
       - timescale-data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -155,16 +149,24 @@ services:
       - tradingbot-net
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.1-alpine
+    profiles: [full]
     container_name: redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD-}
+    command:
+      - sh
+      - -c
+      - '[ -n "$$REDIS_PASSWORD" ] || { echo "REDIS_PASSWORD is required" >&2; exit 1; };
+        exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes
+        --maxmemory 256mb --maxmemory-policy allkeys-lru'
     volumes:
       - redis-data:/data
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -173,16 +175,23 @@ services:
       - tradingbot-net
 
   rabbitmq:
-    image: rabbitmq:3-management-alpine
+    image: rabbitmq:3.13.7-management-alpine
+    profiles: [full]
     container_name: rabbitmq
     restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-rabbit}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-rabbit}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER-}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS-}
+    entrypoint:
+      - sh
+      - -c
+      - '[ -n "$$RABBITMQ_DEFAULT_USER" ] && [ -n "$$RABBITMQ_DEFAULT_PASS" ] ||
+        { echo "RABBITMQ_USER and RABBITMQ_PASS are required" >&2; exit 1; };
+        exec docker-entrypoint.sh rabbitmq-server'
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     ports:
-      - "15672:15672"    # Management UI (AMQP 5672 is internal-only)
+      - "127.0.0.1:15672:15672"   # Management UI (AMQP 5672 is internal-only)
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 30s
@@ -192,10 +201,11 @@ services:
     networks:
       - tradingbot-net
 
-  # ── Observability Stack ───────────────────────────────────────
+  # ── Observability (profile: full) ─────────────────────────────
 
   prometheus:
     image: prom/prometheus:v2.52.0
+    profiles: [full]
     container_name: prometheus
     restart: unless-stopped
     volumes:
@@ -205,28 +215,34 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=15d"
-      - "--web.enable-lifecycle"
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     logging: *default-logging
     networks:
       - tradingbot-net
 
   grafana:
     image: grafana/grafana:11.0.0
+    profiles: [full]
     container_name: grafana
     restart: unless-stopped
     environment:
-      GF_SECURITY_ADMIN_USER:     ${GRAFANA_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_USER:     ${GRAFANA_USER-}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD-}
       GF_PATHS_PROVISIONING:      /etc/grafana/provisioning
       GF_FEATURE_TOGGLES_ENABLE:  traceqlEditor
+    entrypoint:
+      - sh
+      - -c
+      - '[ -n "$$GF_SECURITY_ADMIN_USER" ] && [ -n "$$GF_SECURITY_ADMIN_PASSWORD" ] ||
+        { echo "GRAFANA_USER and GRAFANA_PASSWORD are required" >&2; exit 1; };
+        exec /run.sh'
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - prometheus
       - loki
@@ -236,6 +252,7 @@ services:
 
   loki:
     image: grafana/loki:3.0.0
+    profiles: [full]
     container_name: loki
     restart: unless-stopped
     volumes:
@@ -243,13 +260,14 @@ services:
       - loki-data:/loki
     command: -config.file=/etc/loki/config.yml
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     logging: *default-logging
     networks:
       - tradingbot-net
 
   promtail:
     image: grafana/promtail:3.0.0
+    profiles: [full]
     container_name: promtail
     restart: unless-stopped
     volumes:
@@ -265,16 +283,15 @@ services:
 
   jaeger:
     image: jaegertracing/all-in-one:1.57
+    profiles: [full]
     container_name: jaeger
     restart: unless-stopped
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     ports:
-      - "16686:16686"    # Jaeger UI
-      - "14268:14268"    # HTTP collector
-      - "14250:14250"    # gRPC
-      - "6831:6831/udp"
-      - "9411:9411"      # Zipkin compat
+      - "127.0.0.1:16686:16686"   # Jaeger UI
+      - "127.0.0.1:4317:4317"     # OTLP gRPC
+      - "127.0.0.1:4318:4318"     # OTLP HTTP
     logging: *default-logging
     networks:
       - tradingbot-net
