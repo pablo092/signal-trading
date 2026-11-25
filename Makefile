@@ -4,7 +4,7 @@
 # ════════════════════════════════════════════════════════════════
 
 .DEFAULT_GOAL := help
-.PHONY: help dev stop build test lint clean deploy-fly
+.PHONY: help dev stop build test lint audit clean deploy-fly
 
 # ── Colors ───────────────────────────────────────────────────────
 CYAN  := \033[0;36m
@@ -49,13 +49,18 @@ build-engine: ## Build bot-engine image only
 	docker compose build --no-cache bot-engine
 
 # ── Testing ───────────────────────────────────────────────────────
-test: test-signal test-engine ## Run all tests
+# Python targets use each service's .venv (see signal-service/README.md).
+VENV_BIN := $(if $(filter Windows_NT,$(OS)),.venv/Scripts,.venv/bin)
+
+test: test-signal test-engine test-gateway ## Run all tests
 
 test-signal: ## Run signal-service unit tests
 	@echo "$(CYAN)Testing signal-service...$(RESET)"
-	cd signal-service && \
-		pip install -q -e ".[dev]" && \
-		pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=80
+	cd signal-service && $(VENV_BIN)/python -m pytest tests/ --cov=src --cov-report=term-missing --cov-fail-under=80
+
+test-gateway: ## Run agent-gateway tests
+	@echo "$(CYAN)Testing agent-gateway...$(RESET)"
+	cd agent-gateway && $(VENV_BIN)/python -m pytest --cov=agent_gateway
 
 test-engine: ## Run bot-engine unit tests
 	@echo "$(CYAN)Testing bot-engine...$(RESET)"
@@ -68,15 +73,35 @@ test-engine-cover: ## bot-engine tests with coverage report
 		echo "Coverage report: bot-engine/coverage.html"
 
 # ── Linting ───────────────────────────────────────────────────────
-lint: lint-signal lint-engine ## Run all linters
+lint: lint-signal lint-engine lint-gateway ## Run all linters
 
 lint-signal: ## Lint signal-service (ruff + mypy)
 	@echo "$(CYAN)Linting signal-service...$(RESET)"
-	cd signal-service && ruff check src/ tests/ && ruff format --check src/ tests/ && mypy src/
+	cd signal-service && $(VENV_BIN)/python -m ruff check src/ tests/ && $(VENV_BIN)/python -m mypy src/
+
+lint-gateway: ## Lint agent-gateway (ruff + mypy)
+	@echo "$(CYAN)Linting agent-gateway...$(RESET)"
+	cd agent-gateway && $(VENV_BIN)/python -m ruff check src tests && $(VENV_BIN)/python -m mypy src
 
 lint-engine: ## Lint bot-engine (go vet + staticcheck)
 	@echo "$(CYAN)Linting bot-engine...$(RESET)"
 	cd bot-engine && go vet ./... && staticcheck ./...
+
+# ── Dependency scanning (BL-12) ───────────────────────────────────
+PIP_AUDIT_VERSION   := 2.10.1
+GOVULNCHECK_VERSION := v1.9.0
+OSV_SCANNER_VERSION := v2.7.1
+
+audit: audit-python audit-go audit-dart ## Scan all dependencies for known vulnerabilities
+
+audit-python: ## pip-audit on the hashed Python lockfiles
+	@for f in signal-service/requirements.lock signal-service/requirements-dev.lock 	          agent-gateway/requirements.lock agent-gateway/requirements-dev.lock; do 		echo "$(CYAN)pip-audit $$f$(RESET)"; 		uvx --from pip-audit==$(PIP_AUDIT_VERSION) pip-audit --require-hashes --disable-pip -r $$f || exit 1; 	done
+
+audit-go: ## govulncheck on bot-engine (reachable vulnerabilities only)
+	cd bot-engine && go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+audit-dart: ## OSV-Scanner on the Flutter lockfile
+	go run github.com/google/osv-scanner/v2/cmd/osv-scanner@$(OSV_SCANNER_VERSION) scan source --lockfile app/pubspec.lock
 
 # ── Database ──────────────────────────────────────────────────────
 db-shell: ## Open psql shell

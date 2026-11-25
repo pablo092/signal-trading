@@ -1,91 +1,102 @@
-# Signal Trading Bot
+# Signal Trading
 
-A production-ready algorithmic trading system built with a microservices architecture.
+Algorithmic signal platform for a **paper-trading** Alpaca account, built so AI agents can
+analyze the market without being able to trade. Execution is disabled by default and live
+trading is refused at startup.
 
 ## Architecture
 
-```
+```text
 signal-trading/
-├── signal-service/     # Python — generates trading signals
-├── bot-engine/         # Go — executes orders, manages risk
-└── app/                # Flutter — mobile dashboard
+├── signal-service/   # Python 3.11, FastAPI — computes signals from Alpaca market data
+├── bot-engine/       # Go 1.22, Gin — portfolio, risk rules, WebSocket, (disabled) order path
+├── agent-gateway/    # Python, MCP over STDIO — read-only tools for AI agents
+├── app/              # Flutter — dashboard (web build deployed to Vercel)
+├── api/              # Vercel functions — server-side proxy for the web demo
+└── docs/             # audit, ADRs, roadmap, runbooks
 ```
 
-### Data flow
-
-```
-Market Data (Alpaca) → signal-service → RabbitMQ → bot-engine → Alpaca Orders
-                                                         ↓
-                                                    WebSocket
-                                                         ↓
-                                                   Flutter App
+```text
+Alpaca market data ──► signal-service ◄── HTTP + token ── bot-engine ──► Alpaca (paper)
+                            ▲                                 │
+                            │ read-only tools                 └── WebSocket ──► Flutter app
+                      agent-gateway (MCP) ◄── Claude Code / Codex
 ```
 
-## Tech Stack
+Services talk over HTTP with **scoped service tokens** (ADR-003): every `/api/v1/*` route
+needs a token with the right scope, agent tokens can never hold write scopes, and an empty
+token table denies everything. Order routes return 403 unless `ORDER_EXECUTION_ENABLED=true`
+(ADR-005). See [docs/](docs/) for the audit, ADRs and the
+[implementation backlog](docs/roadmap/IMPLEMENTATION_BACKLOG.md).
 
 | Layer | Technology |
-|-------|-----------|
-| Signal generation | Python 3.11, FastAPI, pandas-ta |
-| Order execution | Go 1.22, Gin, OpenTelemetry |
-| Mobile dashboard | Flutter 3, BLoC |
-| Broker | Alpaca Markets (paper trading) |
-| Databases | PostgreSQL + TimescaleDB, Redis |
-| Messaging | RabbitMQ, WebSocket |
-| Observability | Prometheus, Grafana, Loki, Jaeger |
-| Infrastructure | Docker Compose, Kubernetes |
+| --- | --- |
+| Signals | Python 3.11, FastAPI, pandas, alpaca-py |
+| Engine | Go 1.22, Gin, zap, Prometheus |
+| Agent gateway | MCP Python SDK 2.x, httpx |
+| Dashboard | Flutter 3, BLoC |
+| Broker | Alpaca Markets, **paper only** |
+| Deploy | Docker Compose (local), Fly.io (backends), Vercel (web) |
 
-## Quick Start
+## Quick start (local)
 
-```bash
-# Start all services locally
-cd signal-service
-docker compose up -d
+Requirements: Docker with Compose v2, an Alpaca **paper** account.
 
-# The following will be available:
-# signal-service:  http://localhost:8000/docs
-# bot-engine:      http://localhost:8080/health/ready
-# Grafana:         http://localhost:3000
-# RabbitMQ UI:     http://localhost:15672
+```sh
+cp .env.example .env
+# 1. Fill ALPACA_API_KEY / ALPACA_SECRET_KEY with your PAPER keys.
+# 2. Issue service tokens and fill SERVICE_AUTH_TOKENS / BOT_ENGINE_SIGNAL_TOKEN:
+#    see docs/runbooks/SERVICE_TOKENS.md (without tokens every API call is 401).
+docker compose up -d --build
 ```
 
-## Services
+| URL | |
+| --- | --- |
+| <http://127.0.0.1:8000/docs> | signal-service Swagger |
+| <http://127.0.0.1:8000/health/ready> | signal-service readiness |
+| <http://127.0.0.1:8080/health/ready> | bot-engine readiness |
+| <http://127.0.0.1:8080/api/v1/trading-mode> | verified mode (token with `portfolio:read`) |
 
-### signal-service (Python)
-Generates trading signals using configurable strategies (RSI, MA Cross).
+```sh
+TOKEN=...   # a plaintext token from your table
+curl -s -X POST http://127.0.0.1:8000/api/v1/signals/generate \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"symbol":"AAPL","strategy":"rsi"}'
+```
 
-See [signal-service/README.md](signal-service/README.md) for full documentation.
-
-### bot-engine (Go)
-Receives signals, applies risk rules, and submits orders to Alpaca.
-Exposes a WebSocket endpoint for real-time event streaming to the Flutter app.
-
-### app (Flutter)
-Mobile dashboard displaying live signals, portfolio state, and order history.
+The optional infrastructure (Postgres, TimescaleDB, Redis, RabbitMQ, Prometheus, Grafana,
+Loki, Jaeger) is not used by the code yet. Start it with `docker compose --profile full up -d`
+after setting its passwords in `.env`.
 
 ## Development
 
-```bash
-# signal-service
-cd signal-service
-pip install -e ".[dev]"
-pytest --cov=src
+| Service | Setup | Checks |
+| --- | --- | --- |
+| signal-service | [signal-service/README.md](signal-service/README.md) (venv + hashed lockfile) | `make test-signal lint-signal` |
+| bot-engine | Go 1.22 | `make test-engine lint-engine` |
+| agent-gateway | [agent-gateway/README.md](agent-gateway/README.md) | `make test-gateway lint-gateway` |
+| app | Flutter 3.41 | `cd app && flutter test` |
 
-# bot-engine
-cd bot-engine
-go test ./...
+`make test`, `make lint` and `make audit` (dependency vulnerability scan) run everything.
+GitHub Actions is currently unavailable (billing), so run them locally before a PR.
 
-# app
-cd app
-flutter pub get
-flutter test
-```
+## Deployment
 
-## Risk Management
+- **Backends on Fly.io** and the **web demo on Vercel**: [docs/runbooks/FLY_DEPLOY.md](docs/runbooks/FLY_DEPLOY.md).
+- **AI agents** (Claude Code, Codex CLI) connect through [agent-gateway](agent-gateway/README.md).
+- Tokens: [docs/runbooks/SERVICE_TOKENS.md](docs/runbooks/SERVICE_TOKENS.md).
 
-All orders are governed by configurable risk rules:
+## Safety
+
+- Paper only: bot-engine refuses to start unless `PAPER_TRADING=true` and the broker host is
+  exactly `paper-api.alpaca.markets`.
+- `ORDER_EXECUTION_ENABLED=false` by default; agents can never hold an order scope.
+- Signals are algorithmic indicators, not financial advice.
+
+Risk rules applied by bot-engine to any order:
 
 | Rule | Default |
-|------|---------|
+| --- | --- |
 | Max position size | 5% of portfolio |
 | Max daily loss | 2% |
 | Stop loss | 3% |
