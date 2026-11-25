@@ -48,6 +48,7 @@ class SignalRemoteDataSource {
   }
 
   void _connect() {
+    if (_wsUrl.isEmpty) return; // live feed disabled (web demo)
     _channel?.sink.close();
     _channel = WebSocketChannel.connect(Uri.parse(_wsUrl));
     _channel!.stream.listen(

@@ -43,9 +43,19 @@ step "Configuring Flutter"
 flutter config --no-analytics --enable-web >/dev/null
 flutter --version
 
+# On Vercel, default to the same-origin demo proxy (api/ at the repo root) and no
+# WebSocket feed: the browser cannot authenticate the upgrade yet (BL-15).
+if [ -n "${VERCEL:-}" ]; then
+  SIGNAL_SERVICE_URL="${SIGNAL_SERVICE_URL:-same-origin}"
+  BOT_ENGINE_WS_URL="${BOT_ENGINE_WS_URL-}"
+  ws_define=1
+fi
+
 defines=()
 [ -n "${SIGNAL_SERVICE_URL:-}" ] && defines+=("--dart-define=SIGNAL_SERVICE_URL=$SIGNAL_SERVICE_URL")
-[ -n "${BOT_ENGINE_WS_URL:-}" ] && defines+=("--dart-define=BOT_ENGINE_WS_URL=$BOT_ENGINE_WS_URL")
+if [ -n "${BOT_ENGINE_WS_URL:-}" ] || [ -n "${ws_define:-}" ]; then
+  defines+=("--dart-define=BOT_ENGINE_WS_URL=${BOT_ENGINE_WS_URL:-}")
+fi
 
 step "flutter pub get"
 flutter pub get

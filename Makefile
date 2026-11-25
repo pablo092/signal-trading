@@ -92,22 +92,22 @@ deploy-fly: deploy-signal-fly deploy-engine-fly ## Deploy both services to Fly.i
 
 deploy-signal-fly: ## Deploy signal-service to Fly.io
 	@echo "$(CYAN)Deploying signal-service to Fly.io...$(RESET)"
-	cd signal-service && flyctl deploy --remote-only
+	cd signal-service && flyctl deploy --remote-only --ha=false
 
 deploy-engine-fly: ## Deploy bot-engine to Fly.io
 	@echo "$(CYAN)Deploying bot-engine to Fly.io...$(RESET)"
-	cd bot-engine && flyctl deploy --remote-only
+	cd bot-engine && flyctl deploy --remote-only --ha=false
 
 fly-secrets: ## Set Alpaca secrets on Fly.io — reads from .env
 	@test -f .env || (echo ".env not found — copy .env.example first" && exit 1)
 	flyctl secrets set \
 		ALPACA_API_KEY=$$(grep ALPACA_API_KEY .env | cut -d= -f2) \
 		ALPACA_SECRET_KEY=$$(grep ALPACA_SECRET_KEY .env | cut -d= -f2) \
-		--app signal-service
+		--app trading-bot-signal-service
 	flyctl secrets set \
 		ALPACA_API_KEY=$$(grep ALPACA_API_KEY .env | cut -d= -f2) \
 		ALPACA_SECRET_KEY=$$(grep ALPACA_SECRET_KEY .env | cut -d= -f2) \
-		--app bot-engine
+		--app trading-bot-engine
 
 # ── Kubernetes ────────────────────────────────────────────────────
 k8s-apply: ## Apply all Kubernetes manifests
