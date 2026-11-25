@@ -29,4 +29,7 @@ v0.39.0 requires Go 1.25. The fix is:
 2. `bot-engine/Dockerfile`: `golang:1.22-alpine` → `golang:1.26-alpine`.
 3. Re-run `go test ./...` and `make audit-go`.
 
-Tracked as BL-12a in the backlog.
+**Resolved (BL-12a, 2026-11-25):** bot-engine moved to Go 1.26 with `x/net` v0.60.0,
+`x/text` v0.42.0, `x/crypto` v0.57.0 and `x/sys` v0.48.0 (Docker builder `golang:1.26-alpine`).
+govulncheck now reports **0 reachable vulnerabilities**; 3 in imported packages and 1 in a
+required module remain unreached.

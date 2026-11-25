@@ -4,7 +4,7 @@
 # ════════════════════════════════════════════════════════════════
 
 .DEFAULT_GOAL := help
-.PHONY: help dev stop build test lint audit clean deploy-fly
+.PHONY: help dev stop build ci test lint audit clean deploy-fly
 
 # ── Colors ───────────────────────────────────────────────────────
 CYAN  := \033[0;36m
@@ -48,9 +48,22 @@ build-signal: ## Build signal-service image only
 build-engine: ## Build bot-engine image only
 	docker compose build --no-cache bot-engine
 
+# ── Local CI (BL-01) ─────────────────────────────────────────────
+# Same gates as the GitHub workflows, runnable while Actions is unavailable.
+ci: lint test audit-python audit-go compose-check ## Run every local quality gate
+	@echo "$(CYAN)All local CI gates passed$(RESET)"
+
+compose-check: ## Validate docker-compose.yml (default and full profiles)
+	@ALPACA_API_KEY=ci ALPACA_SECRET_KEY=ci docker compose config --quiet
+	@ALPACA_API_KEY=ci ALPACA_SECRET_KEY=ci docker compose --profile full config --quiet
+	@echo "compose: ok"
+
 # ── Testing ───────────────────────────────────────────────────────
 # Python targets use each service's .venv (see signal-service/README.md).
 VENV_BIN := $(if $(filter Windows_NT,$(OS)),.venv/Scripts,.venv/bin)
+# -race needs cgo + a C toolchain; off by default on Windows. Override: make test GO_RACE=-race
+GO_RACE  ?= $(if $(filter Windows_NT,$(OS)),,-race)
+STATICCHECK_VERSION := v0.8.2
 
 test: test-signal test-engine test-gateway ## Run all tests
 
@@ -64,7 +77,7 @@ test-gateway: ## Run agent-gateway tests
 
 test-engine: ## Run bot-engine unit tests
 	@echo "$(CYAN)Testing bot-engine...$(RESET)"
-	cd bot-engine && go test ./... -v -race -count=1
+	cd bot-engine && go test ./... -count=1 $(GO_RACE)
 
 test-engine-cover: ## bot-engine tests with coverage report
 	cd bot-engine && \
@@ -85,17 +98,19 @@ lint-gateway: ## Lint agent-gateway (ruff + mypy)
 
 lint-engine: ## Lint bot-engine (go vet + staticcheck)
 	@echo "$(CYAN)Linting bot-engine...$(RESET)"
-	cd bot-engine && go vet ./... && staticcheck ./...
+	cd bot-engine && go vet ./... && go run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) ./...
 
 # ── Dependency scanning (BL-12) ───────────────────────────────────
 PIP_AUDIT_VERSION   := 2.10.1
 GOVULNCHECK_VERSION := v1.9.0
 OSV_SCANNER_VERSION := v2.7.1
+# uvx from PATH, else the one installed in signal-service's venv (uv is a dev dependency).
+UVX ?= $(or $(shell command -v uvx 2>/dev/null),signal-service/$(VENV_BIN)/uvx)
 
 audit: audit-python audit-go audit-dart ## Scan all dependencies for known vulnerabilities
 
 audit-python: ## pip-audit on the hashed Python lockfiles
-	@for f in signal-service/requirements.lock signal-service/requirements-dev.lock 	          agent-gateway/requirements.lock agent-gateway/requirements-dev.lock; do 		echo "$(CYAN)pip-audit $$f$(RESET)"; 		uvx --from pip-audit==$(PIP_AUDIT_VERSION) pip-audit --require-hashes --disable-pip -r $$f || exit 1; 	done
+	@for f in signal-service/requirements.lock signal-service/requirements-dev.lock 	          agent-gateway/requirements.lock agent-gateway/requirements-dev.lock; do 		echo "$(CYAN)pip-audit $$f$(RESET)"; 		$(UVX) --from pip-audit==$(PIP_AUDIT_VERSION) pip-audit --require-hashes --disable-pip -r $$f || exit 1; 	done
 
 audit-go: ## govulncheck on bot-engine (reachable vulnerabilities only)
 	cd bot-engine && go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
