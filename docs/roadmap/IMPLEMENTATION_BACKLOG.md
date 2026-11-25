@@ -36,7 +36,7 @@ Exit criteria:
 | BL-17 | OTel OTLP exporters → Jaeger; increment `signals_generated_total`; register WS-clients gauge; numeric status labels; single-worker or multiprocess metrics | TD-14 | M | — |
 | BL-18 | BrokerPort v2 (`ClientOrderID`, `GetOrderByClientID`, `CancelAllOrders`, capabilities, verified mode, ctx timeouts) and `decimal` money | ADR-004, TD-21, TD-24 | M | BL-05 |
 | BL-19 | Kill switch (persisted flag, admin endpoint, env override, cancel-all, alert) | ADR-005 §5.7 | M | BL-14, BL-18 |
-| BL-20 | Sanitized errors with codes and correlation IDs | TD-19 | S | — |
+| BL-20 ✅ | Sanitized errors with codes and correlation IDs | TD-19 | S | — |
 
 ## M3: Order intents (execution-capable, paper only)
 

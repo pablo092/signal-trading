@@ -17,6 +17,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+
+	"github.com/trading-bot/bot-engine/internal/infrastructure/http/apierror"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/reqid"
 )
 
 // Scopes (ADR-003).
@@ -188,12 +191,16 @@ func Require(store *Store, scope string, logger *zap.Logger) gin.HandlerFunc {
 		p := store.Authenticate(BearerToken(c.Request))
 		if p == nil {
 			audit(logger, c, nil, scope, "unauthenticated")
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			apierror.Abort(c, http.StatusUnauthorized, apierror.CodeUnauthorized, "missing or invalid bearer token")
 			return
 		}
 		if !p.HasScope(scope) {
 			audit(logger, c, p, scope, "forbidden")
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient_scope", "required_scope": scope})
+			apierror.AbortWith(c, http.StatusForbidden, apierror.Body{
+				Error:         apierror.CodeInsufficientScope,
+				Detail:        "the token lacks the scope this route requires",
+				RequiredScope: scope,
+			})
 			return
 		}
 		c.Set(principalKey, p)
@@ -225,6 +232,6 @@ func audit(logger *zap.Logger, c *gin.Context, p *Principal, scope, outcome stri
 		zap.String("scope", scope),
 		zap.String("outcome", outcome),
 		zap.Int("status", c.Writer.Status()),
-		zap.String("request_id", c.GetString("request_id")),
+		zap.String("request_id", c.GetString(reqid.GinKey)),
 	)
 }

@@ -122,6 +122,8 @@ async def test_trading_mode(client: Client) -> None:
         (500, {"error": "alpaca: 403 forbidden key=PKSECRETLEAK account=12345"}, "bot-engine returned HTTP 500"),
         (503, {"detail": "Market data unavailable for AAPL: raw alpaca text PKSECRETLEAK"}, "market_data_unavailable"),
         (429, {}, "upstream_rate_limited"),
+        (502, {"error": "broker_unavailable", "detail": "the broker did not return the account equity",
+               "request_id": "x"}, "broker_unavailable"),
     ],
 )
 async def test_upstream_errors_are_sanitized(
@@ -172,3 +174,15 @@ async def test_audit_never_contains_the_token(client: Client, audit_stream: io.S
     await client.call_tool("generate_signal", {"symbol": "AAPL"})
     assert TOKEN not in audit_stream.getvalue()
     assert len(audit_lines(audit_stream)) == 5
+
+
+async def test_each_call_sends_request_id_and_audits_it(
+    client: Client, services: FakeServices, audit_stream: io.StringIO
+) -> None:
+    await client.call_tool("get_trading_mode", {})
+    await client.call_tool("list_strategies", {})
+    sent = [r.headers.get("x-request-id") for r in services.requests]
+    audited = [line["request_id"] for line in audit_lines(audit_stream)]
+    assert len(set(sent)) == 2 and sent == audited
+    for rid in sent:
+        assert rid.startswith("test-agent-") and len(rid) <= 64

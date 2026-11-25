@@ -27,6 +27,7 @@ class AuditLog:
         outcome: str,
         duration_ms: float,
         error_code: str = "",
+        request_id: str = "",
     ) -> dict[str, Any]:
         entry = {
             "ts": datetime.now(UTC).isoformat(timespec="milliseconds"),
@@ -38,6 +39,8 @@ class AuditLog:
             "outcome": outcome,
             "error_code": error_code,
             "duration_ms": round(duration_ms, 1),
+            # Sent upstream as X-Request-ID: joins this line with the services' logs.
+            "request_id": request_id,
         }
         line = json.dumps(entry, ensure_ascii=True, sort_keys=True)
         with self._lock:

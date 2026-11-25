@@ -99,7 +99,8 @@ def test_protected_routes_require_token(client: TestClient, fake: FakeMarketData
 def test_scope_enforced(client: TestClient, fake: FakeMarketData) -> None:
     r = client.post(GEN, headers=auth(OTHER), json={"symbol": "AAPL", "strategy": "rsi"})
     assert r.status_code == 403
-    assert r.json()["detail"]["error"] == "insufficient_scope"
+    assert r.json()["error"] == "insufficient_scope"
+    assert r.json()["required_scope"] == "market:read"
     assert fake.calls == []
 
 

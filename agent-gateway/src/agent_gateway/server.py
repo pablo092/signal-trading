@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import time
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, Literal
@@ -21,7 +22,7 @@ from pydantic import Field
 from .audit import AuditLog
 from .config import GatewayConfig
 from .ratelimit import RateLimiter
-from .upstream import Upstream, UpstreamError
+from .upstream import Upstream, UpstreamError, current_request_id
 
 INSTRUCTIONS = (
     "Read-only market analysis for a PAPER-TRADING account. These tools can list "
@@ -39,6 +40,11 @@ _STRATEGY_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 READ_ONLY = ToolAnnotations(
     read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=True
 )
+
+
+def new_request_id(agent_id: str) -> str:
+    """Per-call correlation ID, <= 64 chars so the services accept it as-is."""
+    return f"{agent_id[:47]}-{uuid.uuid4().hex[:16]}"
 
 
 class InputError(ValueError):
@@ -76,10 +82,25 @@ class Gateway:
         self, tool: str, args: dict[str, Any], fn: Callable[[], Awaitable[dict[str, Any]]]
     ) -> dict[str, Any]:
         t0 = time.perf_counter()
+        request_id = new_request_id(self.config.agent_id)
+        token = current_request_id.set(request_id)
 
         def done(outcome: str, code: str = "") -> None:
-            self.audit.record(tool, args, outcome, (time.perf_counter() - t0) * 1000, code)
+            self.audit.record(
+                tool, args, outcome, (time.perf_counter() - t0) * 1000, code, request_id
+            )
 
+        try:
+            return await self._run(tool, fn, done)
+        finally:
+            current_request_id.reset(token)
+
+    async def _run(
+        self,
+        tool: str,
+        fn: Callable[[], Awaitable[dict[str, Any]]],
+        done: Callable[..., None],
+    ) -> dict[str, Any]:
         if not self.limiter.allow(self.config.agent_id):
             wait = self.limiter.retry_after(self.config.agent_id)
             done("rate_limited", "rate_limited")

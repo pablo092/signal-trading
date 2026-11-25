@@ -8,6 +8,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/trading-bot/bot-engine/internal/application/usecases"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/http/apierror"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/reqid"
 )
 
 // OrdersHandler handles order-related HTTP endpoints.
@@ -61,13 +63,13 @@ type placeOrderResponse struct {
 //	@Router       /api/v1/orders/place [post]
 func (h *OrdersHandler) PlaceOrder(c *gin.Context) {
 	if !h.executionEnabled || h.placeOrder == nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "execution_disabled"})
+		apierror.Abort(c, http.StatusForbidden, apierror.CodeExecutionDisabled, "order execution is disabled on this deployment")
 		return
 	}
 
 	var req placeOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.Abort(c, http.StatusBadRequest, apierror.CodeInvalidRequest, "body must be JSON with string fields symbol and strategy")
 		return
 	}
 
@@ -76,8 +78,8 @@ func (h *OrdersHandler) PlaceOrder(c *gin.Context) {
 		Strategy: req.Strategy,
 	})
 	if err != nil {
-		h.logger.Error("place_order.failed", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.logger.Error("place_order.failed", zap.Error(err), zap.String("request_id", reqid.FromContext(c.Request.Context())))
+		apierror.Abort(c, http.StatusInternalServerError, apierror.CodeInternal, "the order could not be processed")
 		return
 	}
 

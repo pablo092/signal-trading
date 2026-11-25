@@ -5,9 +5,9 @@
 // combines bot-engine's equity and positions into one whitelisted response.
 const BOT_ENGINE_URL = process.env.BOT_ENGINE_URL || "https://trading-bot-engine.fly.dev";
 
-async function get(path, token) {
+async function get(path, token, requestId) {
   const r = await fetch(`${BOT_ENGINE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, "X-Request-ID": requestId },
     redirect: "error",
     signal: AbortSignal.timeout(15000),
   });
@@ -18,6 +18,9 @@ async function get(path, token) {
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
 module.exports = async function handler(req, res) {
+  // Correlation ID (BL-20): forwarded to bot-engine and returned to the browser.
+  const requestId = `vercel-${crypto.randomUUID()}`;
+  res.setHeader("X-Request-ID", requestId);
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -28,9 +31,9 @@ module.exports = async function handler(req, res) {
 
   try {
     const [equity, positions, mode] = await Promise.all([
-      get("/api/v1/portfolio/equity", token),
-      get("/api/v1/portfolio/positions", token),
-      get("/api/v1/trading-mode", token),
+      get("/api/v1/portfolio/equity", token, requestId),
+      get("/api/v1/portfolio/positions", token, requestId),
+      get("/api/v1/trading-mode", token, requestId),
     ]);
     const items = (Array.isArray(positions) ? positions : []).map((p) => ({
       symbol: String(p.symbol ?? ""),
@@ -47,7 +50,9 @@ module.exports = async function handler(req, res) {
       positions: items,
     });
   } catch (e) {
-    if (e && e.status) return res.status(502).json({ error: "upstream_error", status: e.status });
-    return res.status(504).json({ error: "upstream_unreachable" });
+    if (e && e.status) {
+      return res.status(502).json({ error: "upstream_error", detail: `bot-engine returned HTTP ${e.status}`, request_id: requestId });
+    }
+    return res.status(504).json({ error: "upstream_unreachable", detail: "bot-engine did not answer", request_id: requestId });
   }
 };

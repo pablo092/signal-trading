@@ -21,7 +21,10 @@ import (
 
 // ── fakes ──
 
-type fakeBroker struct{ submitted int }
+type fakeBroker struct {
+	submitted int
+	fail      error // when set, read calls fail with this (raw broker) error
+}
 
 func (b *fakeBroker) SubmitOrder(context.Context, *entities.Order) (string, error) {
 	b.submitted++
@@ -31,8 +34,16 @@ func (b *fakeBroker) CancelOrder(context.Context, string) error { return nil }
 func (b *fakeBroker) GetOrderStatus(context.Context, string) (entities.OrderStatus, float64, error) {
 	return entities.OrderStatusFilled, 0, nil
 }
-func (b *fakeBroker) GetPortfolioEquity(context.Context) (float64, error) { return 100000, nil }
+func (b *fakeBroker) GetPortfolioEquity(context.Context) (float64, error) {
+	if b.fail != nil {
+		return 0, b.fail
+	}
+	return 100000, nil
+}
 func (b *fakeBroker) GetPositions(context.Context) ([]entities.Position, error) {
+	if b.fail != nil {
+		return nil, b.fail
+	}
 	return []entities.Position{{Symbol: "AAPL", Quantity: 1}}, nil
 }
 func (b *fakeBroker) IsMarketOpen(context.Context) (bool, error) { return true, nil }

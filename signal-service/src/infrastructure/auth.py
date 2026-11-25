@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from fastapi import HTTPException, Request, status
+from fastapi import Request, status
+
+from src.api.errors import ApiError, request_id_of
 
 logger = structlog.get_logger(__name__)
 
@@ -167,16 +169,19 @@ def require_scope(scope: str) -> Callable[[Request], Principal]:
         path = getattr(route, "path", request.url.path)
         if principal is None:
             _audit(request, None, scope, path, "unauthenticated")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="unauthorized",
+            raise ApiError(
+                status.HTTP_401_UNAUTHORIZED,
+                "unauthorized",
+                "missing or invalid bearer token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         if not principal.has_scope(scope):
             _audit(request, principal, scope, path, "forbidden")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"error": "insufficient_scope", "required_scope": scope},
+            raise ApiError(
+                status.HTTP_403_FORBIDDEN,
+                "insufficient_scope",
+                "the token lacks the scope this route requires",
+                required_scope=scope,
             )
         _audit(request, principal, scope, path, "allowed")
         return principal
@@ -194,5 +199,5 @@ def _audit(request: Request, p: Principal | None, scope: str, route: str, outcom
         route=route,
         scope=scope,
         outcome=outcome,
-        request_id=request.headers.get("x-request-id", ""),
+        request_id=request_id_of(request),
     )
