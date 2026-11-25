@@ -15,3 +15,19 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+
+## Deploy to Vercel (web)
+
+1. In the Vercel project: **Settings → Build & Deployment → Root Directory = `app`**.
+   The repo is a monorepo; without this Vercel detects the Python service and fails
+   with `PYTHON_ENTRYPOINT_NOT_FOUND`.
+2. Leave framework/build settings empty: [vercel.json](vercel.json) sets them.
+   [scripts/vercel-build.sh](scripts/vercel-build.sh) installs a pinned Flutter SDK
+   (3.41.9) and runs `flutter build web`.
+3. Optional environment variables (baked into the public bundle, so never put tokens here):
+   - `SIGNAL_SERVICE_URL`: public https URL of signal-service (default `http://localhost:8000`)
+   - `BOT_ENGINE_WS_URL`: public `wss://` URL of bot-engine `/ws` (default `ws://localhost:8080/ws`)
+
+Limitations today: signal-service and bot-engine require a service token (ADR-003),
+and a browser app cannot hold one safely, so live data needs the user-auth work
+planned in BL-15. The deployed app renders its UI; data calls fail until then.
