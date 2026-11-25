@@ -1,6 +1,22 @@
 # ════════════════════════════════════════════════════════════
 # signal-service — Kubernetes manifests
 # Namespace: tradingbot
+#
+# Operator notes (BL-24 / TD-17):
+# - NOT the current deploy target: backends run on Fly.io (make deploy-fly). Review
+#   these manifests before using them against a real cluster.
+# - Image: set <TAG> to the git SHA tag CI pushes (sha-<short-sha>, see
+#   .github/workflows/signal-service.yml) before applying. Never deploy :latest.
+# - Secrets: the Secret below holds placeholders only (REPLACE_ME). Do not commit
+#   real values. Use sealed-secrets or external-secrets in any real cluster.
+#   AUTH_TOKENS must include the token bot-engine sends as SIGNAL_SERVICE_TOKEN.
+# - Each pod runs uvicorn with 1 worker (see Dockerfile); scale with replicas/HPA.
+# - NetworkPolicy assumptions: the ingress controller runs in namespace
+#   "ingress-nginx" and Prometheus in namespace "monitoring" (matched through the
+#   automatic kubernetes.io/metadata.name label, k8s >= 1.21). Adjust if yours differ.
+# - No Postgres/Redis/Jaeger manifests exist in this repo. REDIS_URL/DATABASE_URL
+#   must point at external/managed services; add matching egress rules (see the
+#   commented template in signal-service-egress) when you know where they live.
 # ════════════════════════════════════════════════════════════
 
 ---
@@ -12,7 +28,7 @@ metadata:
     app.kubernetes.io/managed-by: kubectl
 
 ---
-# ConfigMap — non-secret configuration
+# ConfigMap — non-secret configuration only
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -23,13 +39,15 @@ data:
   LOG_LEVEL: "INFO"
   PAPER_TRADING: "true"
   PORT: "8000"
-  REDIS_URL: "redis://redis-service:6379/0"
-  DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres-service:5432/tradingbot"
-  OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger-service:4318"
   METRICS_ENABLED: "true"
+  # REDIS_URL and DATABASE_URL carry credentials: they live in the Secret below.
+  # OTEL_EXPORTER_OTLP_ENDPOINT is intentionally unset: there is no Jaeger/OTLP
+  # collector manifest in this repo. Set it (and add an egress rule) when one exists.
 
 ---
-# Secret — sensitive credentials (use sealed-secrets or external-secrets in real prod)
+# Secret — PLACEHOLDERS ONLY. Never commit real values to this file.
+# In a real cluster create this Secret out-of-band, preferably via
+# sealed-secrets (SealedSecret) or external-secrets (ExternalSecret).
 apiVersion: v1
 kind: Secret
 metadata:
@@ -37,8 +55,11 @@ metadata:
   namespace: tradingbot
 type: Opaque
 stringData:
-  ALPACA_API_KEY: "REPLACE_WITH_REAL_KEY"
-  ALPACA_SECRET_KEY: "REPLACE_WITH_REAL_SECRET"
+  ALPACA_API_KEY: "REPLACE_ME"
+  ALPACA_SECRET_KEY: "REPLACE_ME"
+  AUTH_TOKENS: "REPLACE_ME"     # scoped token table (ADR-003), JSON
+  REDIS_URL: "REPLACE_ME"       # redis://:password@host:6379/0
+  DATABASE_URL: "REPLACE_ME"    # postgresql+asyncpg://user:password@host:5432/tradingbot
 
 ---
 # Deployment
@@ -70,16 +91,21 @@ spec:
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
     spec:
-      # Security context: run as non-root
+      automountServiceAccountToken: false
+      # Security context: run as non-root (uid 1000 = appuser in the Dockerfile)
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+        runAsGroup: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
 
       containers:
         - name: signal-service
-          image: ghcr.io/your-org/trading-bot/signal-service:latest
-          imagePullPolicy: Always
+          # <TAG> must be replaced with the git SHA tag (sha-<short-sha>) at deploy time.
+          image: ghcr.io/pablo092/signal-trading/signal-service:<TAG>
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
               name: http
@@ -89,6 +115,21 @@ spec:
                 name: signal-service-config
             - secretRef:
                 name: signal-service-secrets
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+
+          # Writable scratch space; the root filesystem is read-only.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
 
           # Resource limits — prevent one pod from starving others
           resources:
@@ -125,6 +166,11 @@ spec:
             failureThreshold: 30
             periodSeconds: 5
 
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+
       # Graceful termination: wait for in-flight requests
       terminationGracePeriodSeconds: 30
 
@@ -149,6 +195,7 @@ spec:
 
 ---
 # HorizontalPodAutoscaler — scale 2→10 pods based on CPU
+# (fine for signal-service: it never submits orders. bot-engine must NOT have one.)
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -187,3 +234,108 @@ spec:
   selector:
     matchLabels:
       app: signal-service
+
+---
+# NetworkPolicy: default deny (namespace-wide).
+# Identical copy in bot-engine/bot-engine.yml so either file is safe to apply alone.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: tradingbot
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# NetworkPolicy: DNS egress (namespace-wide). Identical copy in bot-engine/bot-engine.yml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: tradingbot
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# NetworkPolicy: signal-service ingress — from bot-engine, the ingress controller
+# (assumed namespace "ingress-nginx") and Prometheus (assumed namespace "monitoring").
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: signal-service-ingress
+  namespace: tradingbot
+spec:
+  podSelector:
+    matchLabels:
+      app: signal-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: bot-engine
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring    # /metrics scraping
+      ports:
+        - protocol: TCP
+          port: 8000
+
+---
+# NetworkPolicy: signal-service egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: signal-service-egress
+  namespace: tradingbot
+spec:
+  podSelector:
+    matchLabels:
+      app: signal-service
+  policyTypes:
+    - Egress
+  egress:
+    # Alpaca market data (data.alpaca.markets, paper-api.alpaca.markets).
+    # NetworkPolicy cannot filter by hostname, so this allows TCP 443 to any public
+    # address (private, link-local/metadata and CGNAT ranges excluded). Use an
+    # egress gateway or FQDN-aware CNI policy (e.g. Cilium toFQDNs) to narrow it.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+      ports:
+        - protocol: TCP
+          port: 443
+    # Redis / Postgres: no manifests exist in this repo. When REDIS_URL/DATABASE_URL
+    # point at known targets, add rules like:
+    # - to:
+    #     - podSelector:
+    #         matchLabels:
+    #           app: redis
+    #   ports:
+    #     - protocol: TCP
+    #       port: 6379

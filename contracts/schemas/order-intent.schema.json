@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "order-intent.schema.json",
+  "title": "OrderIntent",
+  "description": "A proposed order (ADR-005 \u00c2\u00a75.3). Every intent needs a human approval before it is submitted. Amounts are JSON numbers printed from decimals. Lifecycle: pending_risk -> pending_approval -> approved -> submitted -> filled | rejected | canceled | expired.",
+  "type": "object",
+  "required": [
+    "id",
+    "status",
+    "symbol",
+    "strategy",
+    "side",
+    "qty",
+    "estimated_notional",
+    "signal",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_by",
+    "decided_at",
+    "decision_reason",
+    "rejection_code",
+    "risk",
+    "order"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "Also the broker client_order_id and the order id."
+    },
+    "status": {
+      "enum": [
+        "pending_risk",
+        "pending_approval",
+        "approved",
+        "submitted",
+        "filled",
+        "rejected",
+        "canceled",
+        "expired"
+      ]
+    },
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "strategy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "side": {
+      "enum": [
+        "buy",
+        "sell",
+        null
+      ],
+      "description": "null when the signal is not actionable (HOLD)."
+    },
+    "qty": {
+      "type": "number",
+      "minimum": 0,
+      "description": "0 when sizing did not run (rejected before sizing)."
+    },
+    "estimated_notional": {
+      "type": "number",
+      "minimum": 0,
+      "description": "qty x signal price at creation."
+    },
+    "signal": {
+      "type": "object",
+      "required": [
+        "id",
+        "direction",
+        "confidence",
+        "price",
+        "generated_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "direction": {
+          "enum": [
+            "BUY",
+            "SELL",
+            "HOLD"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "price": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "created_by": {
+      "type": "object",
+      "required": [
+        "id",
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "agent",
+            "human",
+            "service",
+            "system"
+          ]
+        }
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Approval deadline; after it a pending intent becomes expired."
+    },
+    "decided_by": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": {
+              "enum": [
+                "agent",
+                "human",
+                "service",
+                "system"
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Who approved, rejected or canceled it."
+    },
+    "decided_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "decision_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rejection_code": {
+      "enum": [
+        "risk_failed",
+        "rejected_by_approver",
+        "broker_rejected",
+        "kill_switch",
+        null
+      ]
+    },
+    "risk": {
+      "type": "object",
+      "description": "The latest risk evaluation: at creation, then again just before submission.",
+      "required": [
+        "passed",
+        "stage",
+        "evaluated_at",
+        "checks"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "stage": {
+          "enum": [
+            "creation",
+            "submission"
+          ]
+        },
+        "evaluated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "passed",
+              "detail"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "passed": {
+                "type": "boolean"
+              },
+              "detail": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "order": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "broker_id",
+            "status",
+            "filled_qty",
+            "filled_price",
+            "filled_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "broker_id": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "pending",
+                "submitted",
+                "partially_filled",
+                "filled",
+                "canceled",
+                "rejected",
+                "expired"
+              ]
+            },
+            "filled_qty": {
+              "type": "number",
+              "minimum": 0
+            },
+            "filled_price": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "filled_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Set once the intent was submitted."
+    }
+  }
+}

@@ -51,7 +51,8 @@ type placeOrderResponse struct {
 
 // PlaceOrder godoc
 //
-//	@Summary      Place an order
+//	@Summary      Place an order (deprecated: use /api/v1/order-intents)
+//	@Deprecated
 //	@Description  Fetches a signal for the given symbol+strategy, applies risk rules, and submits an order to the broker. Returns skipped=true if risk rules reject the signal.
 //	@Tags         Orders
 //	@Accept       json
@@ -68,6 +69,9 @@ type placeOrderResponse struct {
 //	@Failure      503   {object}  apierror.Body  "audit_unavailable"
 //	@Router       /api/v1/orders/place [post]
 func (h *OrdersHandler) PlaceOrder(c *gin.Context) {
+	// Deprecated (ADR-005): it bypasses human approval. Use order intents.
+	c.Header("Deprecation", "true")
+	c.Header("Link", `</api/v1/order-intents>; rel="successor-version"`)
 	if !h.executionEnabled || h.placeOrder == nil {
 		apierror.Abort(c, http.StatusForbidden, apierror.CodeExecutionDisabled, "order execution is disabled on this deployment")
 		return

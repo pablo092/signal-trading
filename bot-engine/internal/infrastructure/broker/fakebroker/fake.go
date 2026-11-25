@@ -37,6 +37,10 @@ type Broker struct {
 
 	// Submitted records every accepted request, in order.
 	Submitted []ports.SubmitOrderRequest
+
+	// FailStream makes StreamTradeUpdates return this error immediately.
+	FailStream error
+	streams    []chan ports.TradeUpdate
 }
 
 var _ ports.BrokerPort = (*Broker)(nil)
@@ -68,6 +72,13 @@ func (b *Broker) SetMarketOpen(open bool) { b.mu.Lock(); b.clock.IsOpen = open; 
 func (b *Broker) SetFillPrice(symbol string, price decimal.Decimal) {
 	b.mu.Lock()
 	b.prices[symbol] = price
+	b.mu.Unlock()
+}
+
+// ClearFillPrice leaves market orders for symbol working until Fill or Cancel.
+func (b *Broker) ClearFillPrice(symbol string) {
+	b.mu.Lock()
+	delete(b.prices, symbol)
 	b.mu.Unlock()
 }
 
@@ -217,6 +228,87 @@ func (b *Broker) GetPositions(context.Context) ([]entities.Position, error) {
 		return nil, err
 	}
 	return append([]entities.Position(nil), b.positions...), nil
+}
+
+// StreamTradeUpdates implements ports.BrokerPort: it delivers what Fill and
+// Cancel emit until ctx ends.
+func (b *Broker) StreamTradeUpdates(ctx context.Context, handler func(ports.TradeUpdate)) error {
+	b.mu.Lock()
+	if err := b.fail(b.FailStream); err != nil {
+		b.mu.Unlock()
+		return err
+	}
+	ch := make(chan ports.TradeUpdate, 64)
+	b.streams = append(b.streams, ch)
+	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		for i, c := range b.streams {
+			if c == ch {
+				b.streams = append(b.streams[:i], b.streams[i+1:]...)
+				break
+			}
+		}
+		b.mu.Unlock()
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case u := <-ch:
+			handler(u)
+		}
+	}
+}
+
+// Streaming reports how many StreamTradeUpdates calls are listening.
+func (b *Broker) Streaming() int { b.mu.Lock(); defer b.mu.Unlock(); return len(b.streams) }
+
+// Fill fills a working order at price and emits a "fill" trade update.
+func (b *Broker) Fill(brokerOrderID string, price decimal.Decimal) error {
+	return b.change(brokerOrderID, "fill", func(o *ports.BrokerOrder) {
+		now := time.Now().UTC()
+		p := price
+		o.Status, o.FilledQty, o.FilledAvgPrice, o.FilledAt = entities.OrderStatusFilled, o.Qty, &p, &now
+	})
+}
+
+// Cancel cancels a working order and emits a "canceled" trade update.
+func (b *Broker) Cancel(brokerOrderID string) error {
+	return b.change(brokerOrderID, "canceled", func(o *ports.BrokerOrder) { o.Status = entities.OrderStatusCanceled })
+}
+
+// SetOrderSilently changes an order without emitting an update, simulating a
+// missed stream event that only polling can recover.
+func (b *Broker) SetOrderSilently(brokerOrderID string, status entities.OrderStatus) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	o, ok := b.orders[brokerOrderID]
+	if !ok {
+		return fmt.Errorf("fake: %w", ports.ErrNotFound)
+	}
+	o.Status = status
+	if status == entities.OrderStatusFilled {
+		o.FilledQty = o.Qty
+	}
+	return nil
+}
+
+func (b *Broker) change(brokerOrderID, event string, apply func(*ports.BrokerOrder)) error {
+	b.mu.Lock()
+	o, ok := b.orders[brokerOrderID]
+	if !ok {
+		b.mu.Unlock()
+		return fmt.Errorf("fake: %w", ports.ErrNotFound)
+	}
+	apply(o)
+	u := ports.TradeUpdate{Event: event, At: time.Now().UTC(), Order: *o}
+	streams := append([]chan ports.TradeUpdate(nil), b.streams...)
+	b.mu.Unlock()
+	for _, ch := range streams {
+		ch <- u
+	}
+	return nil
 }
 
 // GetClock implements ports.BrokerPort.

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **Proposed** |
+| Status | **Accepted** (2026-11-25, M3) |
 | Date | 2026-11-24 |
 | Deciders | Repository owner |
 | Related | TD-01…TD-06, SEC-01…SEC-05, SEC-11, ADR-003, ADR-004 |
@@ -18,7 +18,7 @@ Define the controls that every order must pass: approval workflow, idempotency, 
 2. **Order-intent pipeline.** Callers create *intents*; intents pass risk checks, optional or mandatory human approval, then a single executor submits them.
 3. **Human-only execution.** Agents and automation never create orders.
 
-## Decision (proposed)
+## Decision
 Option 2, with the following non-negotiable controls.
 
 ### 5.1 Mode guard (applies immediately, M1)
@@ -89,7 +89,11 @@ Stop-loss and take-profit are attached as broker-side bracket orders when suppor
 - **Option 1 (direct execution, hardened):** no human checkpoint and no natural place for agent proposals. One bug or injection means an order.
 - **Option 3 (human-only):** safe, but contradicts the product goal. Option 2 with mandatory approval provides the same safety initially.
 
-## Open questions
-- Approval channel: the app only, or also a messaging integration (e.g. Slack)?
-- Intent TTL default and signal freshness window per timeframe.
-- Absolute notional cap value for paper trading.
+## Resolved questions (owner, 2026-11-25)
+- **Approval channel:** the bot-engine API only (`POST /api/v1/order-intents/{id}/approve`, human token with `intent:approve`), used by the app's Approvals tab. No messaging integration; adding one needs its own ADR.
+- **Intent TTL and signal freshness:** 5 minutes each (`INTENT_TTL`, `RISK_SIGNAL_MAX_AGE`), one window for every timeframe.
+- **Absolute notional cap:** $1000 per order (`RISK_MAX_ORDER_NOTIONAL`), on top of the 5 %-of-equity sizing; the smaller wins.
+- **Other defaults:** symbol allowlist `SPY,QQQ,AAPL,MSFT` (an empty list refuses everything), strategies `rsi,ma_cross`, regular hours only, 10 intents per hour per actor, no short selling (a SELL only closes a held position).
+- **Legacy route:** `POST /api/v1/orders/place` stays, deprecated (`Deprecation: true`, `Link: </api/v1/order-intents>; rel="successor-version"`), until a later PR removes it.
+
+Implementation and operations: [ORDER_INTENTS.md](../runbooks/ORDER_INTENTS.md).

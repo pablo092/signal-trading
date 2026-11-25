@@ -4,9 +4,13 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/config.dart';
+import '../../../../core/network/engine_http.dart';
 import '../../../../injection_container.dart';
 import '../../../../shared/theme/trading_theme.dart';
 import '../../../../shared/widgets/trading_widgets.dart';
+import '../../../orders/presentation/bloc/intents_bloc.dart';
+import '../../../orders/presentation/pages/intents_tabs.dart';
+import '../../../orders/presentation/widgets/intent_widgets.dart';
 import '../../../portfolio/data/portfolio_api.dart';
 import '../../../signals/domain/entities/signal_entity.dart';
 import '../../../signals/presentation/bloc/signal_bloc.dart';
@@ -24,7 +28,10 @@ class _DashboardPageState extends State<DashboardPage> {
   String _selectedSymbol = 'AAPL';
   String _selectedStrategy = 'rsi';
   int _tab = 0;
-  late Future<PortfolioSnapshot> _portfolio;
+
+  /// null when no portfolio source is available (no token, not the web demo):
+  /// the portfolio sections then show the "connect a token" state.
+  Future<PortfolioSnapshot>? _portfolio;
 
   final List<String> _symbols = ['AAPL', 'TSLA', 'MSFT', 'NVDA', 'AMZN'];
   final List<String> _strategies = ['rsi', 'ma_cross'];
@@ -32,11 +39,21 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
-    _portfolio = sl<PortfolioApi>().fetch();
+    _portfolio = _loadPortfolio();
     _fetchSignal();
     if (AppConfig.liveFeedEnabled) {
       context.read<SignalBloc>().add(const SignalWatchStarted());
     }
+    if (AppConfig.engineEnabled) {
+      final intents = context.read<IntentsBloc>();
+      intents.add(const IntentsRequested());
+      if (AppConfig.liveFeedEnabled) intents.add(const IntentsWatchStarted());
+    }
+  }
+
+  Future<PortfolioSnapshot>? _loadPortfolio() {
+    final api = sl<PortfolioApi>();
+    return api.available ? api.fetch() : null;
   }
 
   void _fetchSignal() {
@@ -47,31 +64,48 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   void _refreshPortfolio() {
-    setState(() => _portfolio = sl<PortfolioApi>().fetch());
+    setState(() => _portfolio = _loadPortfolio());
+  }
+
+  /// "Propose trade" from a signal card: create an intent, show the result.
+  void _proposeTrade(SignalEntity signal) {
+    context.read<IntentsBloc>().add(IntentProposed(
+          symbol: signal.symbol,
+          strategy: _selectedStrategy,
+        ));
+    setState(() => _tab = 3);
   }
 
   Future<void> _refreshAll() async {
     _fetchSignal();
     _refreshPortfolio();
+    if (AppConfig.engineEnabled) {
+      context.read<IntentsBloc>().add(const IntentsRequested());
+    }
+    final portfolio = _portfolio;
+    if (portfolio == null) return;
     try {
-      await _portfolio;
+      await portfolio;
     } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
+    final Widget content = RefreshIndicator(
+      color: TradingTheme.accent,
+      backgroundColor: TradingTheme.surface,
+      onRefresh: _refreshAll,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: _buildTab(),
+      ),
+    );
     return Scaffold(
       backgroundColor: TradingTheme.primary,
       appBar: _buildAppBar(),
-      body: RefreshIndicator(
-        color: TradingTheme.accent,
-        backgroundColor: TradingTheme.surface,
-        onRefresh: _refreshAll,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: _buildTab(),
-        ),
-      ),
+      body: AppConfig.engineEnabled
+          ? IntentNoticeListener(child: content)
+          : content,
       bottomNavigationBar: NavigationBar(
         backgroundColor: TradingTheme.surface,
         indicatorColor: TradingTheme.accent.withOpacity(0.2),
@@ -98,6 +132,11 @@ class _DashboardPageState extends State<DashboardPage> {
             selectedIcon: Icon(Icons.receipt_long_rounded),
             label: 'Orders',
           ),
+          NavigationDestination(
+            icon: Icon(Icons.verified_user_outlined),
+            selectedIcon: Icon(Icons.verified_user_rounded),
+            label: 'Approvals',
+          ),
         ],
       ),
     );
@@ -109,7 +148,7 @@ class _DashboardPageState extends State<DashboardPage> {
         return [
           _controls(),
           const SizedBox(height: 12),
-          _SignalSection(onFetch: _fetchSignal),
+          _SignalSection(onFetch: _fetchSignal, onPropose: _proposeTrade),
           const SizedBox(height: 16),
           const _SignalHistorySection(),
         ];
@@ -120,7 +159,21 @@ class _DashboardPageState extends State<DashboardPage> {
           _PositionsSection(future: _portfolio),
         ];
       case 3:
-        return const [_OrdersInfoCard()];
+        if (!AppConfig.engineEnabled) {
+          return const [
+            EngineTokenRequiredCard(feature: 'Orders and trade proposals'),
+          ];
+        }
+        return [
+          _controls(refetchSignal: false),
+          const SizedBox(height: 12),
+          OrdersTab(symbol: _selectedSymbol, strategy: _selectedStrategy),
+        ];
+      case 4:
+        if (!AppConfig.engineEnabled) {
+          return const [EngineTokenRequiredCard(feature: 'Approvals')];
+        }
+        return const [ApprovalsTab()];
       default:
         return [
           const _DemoBanner(),
@@ -128,14 +181,14 @@ class _DashboardPageState extends State<DashboardPage> {
           const SizedBox(height: 16),
           _controls(),
           const SizedBox(height: 12),
-          _SignalSection(onFetch: _fetchSignal),
+          _SignalSection(onFetch: _fetchSignal, onPropose: _proposeTrade),
           const SizedBox(height: 16),
           _RecentSignalsSection(),
         ];
     }
   }
 
-  Widget _controls() {
+  Widget _controls({bool refetchSignal = true}) {
     return _SignalControlsSection(
       selectedSymbol: _selectedSymbol,
       selectedStrategy: _selectedStrategy,
@@ -143,11 +196,11 @@ class _DashboardPageState extends State<DashboardPage> {
       strategies: _strategies,
       onSymbolChanged: (v) {
         setState(() => _selectedSymbol = v);
-        _fetchSignal();
+        if (refetchSignal) _fetchSignal();
       },
       onStrategyChanged: (v) {
         setState(() => _selectedStrategy = v);
-        _fetchSignal();
+        if (refetchSignal) _fetchSignal();
       },
     );
   }
@@ -185,6 +238,11 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   void _showAbout() {
+    final trading = AppConfig.engineEnabled
+        ? 'Trades are proposed as order intents; each one needs a human '
+            'approval before it is submitted.'
+        : 'Order execution is disabled: nothing here can place or propose '
+            'an order.';
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -194,7 +252,7 @@ class _DashboardPageState extends State<DashboardPage> {
           'Signals are computed live by signal-service from Alpaca market data '
           '(RSI and EMA crossover strategies).\n\n'
           'Portfolio data comes from an Alpaca PAPER account. '
-          'Order execution is disabled: nothing here can place an order.\n\n'
+          '$trading\n\n'
           'Signals are algorithmic indicators, not financial advice.',
           style: TradingTheme.bodyMedium,
         ),
@@ -230,7 +288,9 @@ class _DemoBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Paper trading demo · order execution disabled',
+              AppConfig.engineEnabled
+                  ? 'Paper trading · every trade needs a human approval'
+                  : 'Paper trading demo · order execution disabled',
               style: TradingTheme.caption.copyWith(color: TradingTheme.neutral),
             ),
           ),
@@ -243,17 +303,28 @@ class _DemoBanner extends StatelessWidget {
 // ── Portfolio Summary ─────────────────────────────────────────
 
 class _PortfolioSummarySection extends StatelessWidget {
-  final Future<PortfolioSnapshot> future;
+  final Future<PortfolioSnapshot>? future;
   final VoidCallback onRetry;
   const _PortfolioSummarySection({required this.future, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
+    if (future == null) {
+      return const EngineTokenRequiredCard(feature: 'Portfolio');
+    }
     return FutureBuilder<PortfolioSnapshot>(
       future: future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const LoadingCard(height: 140);
+        }
+        final error = snap.error;
+        if (error is ApiException) {
+          return FailureCard(
+            title: 'Portfolio unavailable',
+            failure: error.failure,
+            onRetry: onRetry,
+          );
         }
         if (snap.hasError || !snap.hasData) {
           return Card(
@@ -311,11 +382,12 @@ class _PortfolioSummarySection extends StatelessWidget {
 }
 
 class _PositionsSection extends StatelessWidget {
-  final Future<PortfolioSnapshot> future;
+  final Future<PortfolioSnapshot>? future;
   const _PositionsSection({required this.future});
 
   @override
   Widget build(BuildContext context) {
+    if (future == null) return const SizedBox.shrink();
     return FutureBuilder<PortfolioSnapshot>(
       future: future,
       builder: (context, snap) {
@@ -358,36 +430,6 @@ class _PositionsSection extends StatelessWidget {
           ],
         );
       },
-    );
-  }
-}
-
-// ── Orders ────────────────────────────────────────────────────
-
-class _OrdersInfoCard extends StatelessWidget {
-  const _OrdersInfoCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.lock_outline_rounded, color: TradingTheme.neutral, size: 32),
-            const SizedBox(height: 12),
-            Text('Order execution is disabled', style: TradingTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              'This demo runs against an Alpaca paper account with execution '
-              'turned off. Orders will come back as human-approved order '
-              'intents (milestone M3); agents and this app can only read.',
-              style: TradingTheme.bodyMedium,
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -469,7 +511,10 @@ class _DropdownField extends StatelessWidget {
 
 class _SignalSection extends StatelessWidget {
   final VoidCallback onFetch;
-  const _SignalSection({required this.onFetch});
+
+  /// Creates an order intent; only called with an engine token.
+  final ValueChanged<SignalEntity> onPropose;
+  const _SignalSection({required this.onFetch, required this.onPropose});
 
   @override
   Widget build(BuildContext context) {
@@ -490,9 +535,11 @@ class _SignalSection extends StatelessWidget {
               children: [
                 SignalCard(
                   signal: signal,
-                  onApprove: signal.isActionable
-                      ? () => _showExecutionDisabled(context, signal)
-                      : null,
+                  onPropose: !signal.isActionable
+                      ? null
+                      : AppConfig.engineEnabled
+                          ? () => onPropose(signal)
+                          : () => _showTokenRequired(context, signal),
                 ),
                 if (history.length > 1) ...[
                   const SizedBox(height: 16),
@@ -525,7 +572,7 @@ class _SignalSection extends StatelessWidget {
     );
   }
 
-  void _showExecutionDisabled(BuildContext context, SignalEntity signal) {
+  void _showTokenRequired(BuildContext context, SignalEntity signal) {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -545,8 +592,9 @@ class _SignalSection extends StatelessWidget {
             Text('Confidence: ${signal.confidencePercent}', style: TradingTheme.caption),
             const SizedBox(height: 12),
             Text(
-              'Order execution is disabled in this demo (paper account). '
-              'No order will be placed.',
+              'Proposing a trade needs a bot-engine token, which only a local '
+              'build may hold (--dart-define=BOT_ENGINE_TOKEN). No order or '
+              'intent was created.',
               style: TradingTheme.caption.copyWith(color: TradingTheme.neutral),
             ),
           ],

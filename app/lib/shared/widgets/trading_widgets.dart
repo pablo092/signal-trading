@@ -10,13 +10,15 @@ import '../../features/signals/domain/entities/signal_entity.dart';
 
 class SignalCard extends StatelessWidget {
   final SignalEntity signal;
-  final VoidCallback? onApprove;
+  /// "Propose trade": creates an order intent; nothing executes without a
+  /// human approval (ADR-005).
+  final VoidCallback? onPropose;
   final VoidCallback? onDismiss;
 
   const SignalCard({
     super.key,
     required this.signal,
-    this.onApprove,
+    this.onPropose,
     this.onDismiss,
   });
 
@@ -102,7 +104,7 @@ class SignalCard extends StatelessWidget {
             ),
 
             // Action buttons (only for actionable signals)
-            if (signal.isActionable && (onApprove != null || onDismiss != null)) ...[
+            if (signal.isActionable && (onPropose != null || onDismiss != null)) ...[
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 12),
@@ -123,14 +125,14 @@ class SignalCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                  if (onApprove != null && onDismiss != null) const SizedBox(width: 12),
-                  if (onApprove != null)
+                  if (onPropose != null && onDismiss != null) const SizedBox(width: 12),
+                  if (onPropose != null)
                     Expanded(
                       flex: 2,
                       child: FilledButton.icon(
-                        onPressed: onApprove,
-                        icon: const Icon(Icons.check_rounded, size: 16),
-                        label: const Text('Approve Order'),
+                        onPressed: onPropose,
+                        icon: const Icon(Icons.send_rounded, size: 16),
+                        label: const Text('Propose trade'),
                       ),
                     ),
                 ],

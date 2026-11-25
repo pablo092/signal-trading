@@ -16,8 +16,8 @@ engaged.
 
 No production token holds `admin:killswitch` by default. To grant it to the operator, add
 the scope to the `operator` entry of `AUTH_TOKENS` (see [SERVICE_TOKENS.md](SERVICE_TOKENS.md))
-and restart. A token table that grants it to an `agent` entry fails to load, and agent
-tokens are refused at request time as well. Give it only to `human` entries.
+and restart. A token table that grants it to an `agent` or `service` entry fails to load, and
+such tokens are refused at request time as well. Give it only to `human` entries.
 
 ## Engage
 

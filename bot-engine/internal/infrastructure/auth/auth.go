@@ -30,8 +30,9 @@ const (
 	ScopeIntentCreate    = "intent:create"
 	ScopeIntentApprove   = "intent:approve"
 	ScopeAdminKillswitch = "admin:killswitch"
-	// ScopeOrdersPlaceLegacy guards the deprecated direct /orders/place route.
-	// It is human-only and is removed together with that route in M3 (BL-21).
+	// ScopeOrdersPlaceLegacy guards the deprecated direct /orders/place route
+	// (ADR-005: deprecated by order intents in M3, removed in a later release).
+	// It is human-only.
 	ScopeOrdersPlaceLegacy = "orders:place-legacy"
 )
 
@@ -47,7 +48,8 @@ var knownScopes = map[string]bool{
 	ScopeIntentApprove: true, ScopeAdminKillswitch: true, ScopeOrdersPlaceLegacy: true,
 }
 
-// humanOnlyScopes can never be granted to agent tokens (ADR-003 mandatory rules).
+// humanOnlyScopes can only be granted to human tokens: never to agents, and
+// not to service tokens either, which act without a person (ADR-003).
 var humanOnlyScopes = map[string]bool{
 	ScopeIntentApprove: true, ScopeAdminKillswitch: true, ScopeOrdersPlaceLegacy: true,
 }
@@ -136,8 +138,8 @@ func NewStore(entries []*Principal) (*Store, error) {
 			if !knownScopes[s] {
 				return nil, fmt.Errorf("token entry %q: unknown scope %q", p.ID, s)
 			}
-			if p.Type == ActorAgent && humanOnlyScopes[s] {
-				return nil, fmt.Errorf("token entry %q: agent tokens cannot hold scope %q", p.ID, s)
+			if p.Type != ActorHuman && humanOnlyScopes[s] {
+				return nil, fmt.Errorf("token entry %q: only human tokens can hold scope %q", p.ID, s)
 			}
 		}
 		p.digest = d
@@ -161,8 +163,8 @@ func (s *Store) Authenticate(token string) *Principal {
 			found = p
 		}
 	}
-	// Defense in depth: verification also refuses human-only scopes on agents.
-	if found != nil && found.Type == ActorAgent {
+	// Defense in depth: verification also refuses human-only scopes on non-humans.
+	if found != nil && found.Type != ActorHuman {
 		for _, sc := range found.Scopes {
 			if humanOnlyScopes[sc] {
 				return nil

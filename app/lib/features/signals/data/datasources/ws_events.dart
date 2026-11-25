@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../../orders/domain/entities/order_intent.dart';
 import '../../domain/entities/signal_entity.dart';
 
 /// WebSocket event envelope version this app understands
@@ -10,6 +11,8 @@ const int wsEventVersion = 1;
 const String wsTypeSignalReceived = 'signal.received';
 const String wsTypeOrderPlaced = 'order.placed';
 const String wsTypeKillSwitchChanged = 'kill_switch.changed';
+const String wsTypeIntentUpdated = 'intent.updated';
+const String wsTypeOrderFilled = 'order.filled';
 
 /// A decoded WebSocket event.
 class WsEvent {
@@ -51,4 +54,15 @@ class WsEvent {
   /// The signal carried by a signal.received event, or null.
   SignalEntity? get signal =>
       type == wsTypeSignalReceived ? SignalEntity.fromJson(data) : null;
+
+  /// The intent carried by an intent.updated event, or null (also when the
+  /// data does not decode, so one bad message cannot break the stream).
+  OrderIntent? get intent {
+    if (type != wsTypeIntentUpdated) return null;
+    try {
+      return OrderIntent.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
 }

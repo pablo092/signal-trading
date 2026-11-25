@@ -49,10 +49,13 @@ def test_config_accepts_https_remote() -> None:
     assert c.bot_engine_url == "https://engine.example.com"
 
 
-def test_allowlist_contains_no_write_endpoints() -> None:
-    for _, method, path in ALLOWED_ENDPOINTS:
-        assert "order" not in path and "intent" not in path and "kill" not in path
-        assert method == "GET" or path == "/api/v1/signals/generate"
+def test_allowlist_contains_only_reads_and_intent_proposal() -> None:
+    writes = {(s, m, p) for s, m, p in ALLOWED_ENDPOINTS if m != "GET"}
+    # Computing a signal and proposing an intent (intent:create) are the only non-GET routes.
+    assert writes == {("signal", "POST", "/api/v1/signals/generate"), ("engine", "POST", "/api/v1/order-intents")}
+    for _, _, path in ALLOWED_ENDPOINTS:
+        for word in ("approve", "reject", "cancel", "kill", "orders", "admin"):
+            assert word not in path
 
 
 @pytest.mark.parametrize(
@@ -62,6 +65,13 @@ def test_allowlist_contains_no_write_endpoints() -> None:
         ("engine", "GET", "/ws"),
         ("signal", "GET", "/api/v1/portfolio/equity"),
         ("engine", "DELETE", "/api/v1/portfolio/positions"),
+        ("engine", "POST", "/api/v1/order-intents/{id}/approve"),
+        ("engine", "POST", "/api/v1/order-intents/{id}/reject"),
+        ("engine", "POST", "/api/v1/order-intents/{id}/cancel"),
+        ("engine", "POST", "/api/v1/kill-switch"),
+        ("engine", "POST", "/api/v1/order-intents/{id}"),
+        ("engine", "DELETE", "/api/v1/order-intents/{id}"),
+        ("signal", "POST", "/api/v1/order-intents"),
     ],
 )
 async def test_non_allowlisted_endpoints_are_refused_without_a_request(service: str, method: str, path: str) -> None:
@@ -69,6 +79,20 @@ async def test_non_allowlisted_endpoints_are_refused_without_a_request(service: 
     up = Upstream(GatewayConfig(gateway_token="t"), transport=httpx.MockTransport(lambda r: calls.append(r) or httpx.Response(200, json={})))
     with pytest.raises(UpstreamError) as exc_info:
         await up.request(service, method, path)  # type: ignore[arg-type]
+    assert exc_info.value.code == "endpoint_not_allowed"
+    assert calls == []
+    await up.aclose()
+
+
+@pytest.mark.parametrize(
+    "path_params",
+    [None, {}, {"id": "../approve"}, {"id": "a/b"}, {"id": "x?y=1"}, {"id": "abc", "extra": "1"}],
+)
+async def test_path_parameters_cannot_reach_other_routes(path_params: dict[str, str] | None) -> None:
+    calls: list[httpx.Request] = []
+    up = Upstream(GatewayConfig(gateway_token="t"), transport=httpx.MockTransport(lambda r: calls.append(r) or httpx.Response(200, json={})))
+    with pytest.raises(UpstreamError) as exc_info:
+        await up.request("engine", "GET", "/api/v1/order-intents/{id}", path_params=path_params)
     assert exc_info.value.code == "endpoint_not_allowed"
     assert calls == []
     await up.aclose()

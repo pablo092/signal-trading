@@ -53,7 +53,8 @@ class GatewayConfig:
         token = e.get("GATEWAY_TOKEN", "").strip()
         if not token:
             raise ConfigError(
-                "GATEWAY_TOKEN is required (a read-only service token, see "
+                "GATEWAY_TOKEN is required (an agent service token with read scopes and "
+                "intent:create, never intent:approve; see "
                 "docs/runbooks/SERVICE_TOKENS.md)"
             )
         agent_id = e.get("AGENT_ID", "mcp-agent").strip()

@@ -1,8 +1,8 @@
 # agent-gateway
 
-Read-only MCP server (STDIO) that lets AI agents analyze the market through signal-trading
-(ADR-002, M1). It holds no trading logic: each tool maps to one read endpoint of
-signal-service or bot-engine.
+MCP server (STDIO) that lets AI agents analyze the market through signal-trading and
+**propose** paper orders (ADR-002, BL-26). It holds no trading logic: each tool maps to one
+endpoint of signal-service or bot-engine.
 
 | Tool | Backend | Notes |
 |---|---|---|
@@ -11,16 +11,23 @@ signal-service or bot-engine.
 | `get_portfolio_summary` | `GET bot-engine /api/v1/portfolio/equity` | Paper account |
 | `get_positions` | `GET bot-engine /api/v1/portfolio/positions` | |
 | `get_trading_mode` | `GET bot-engine /api/v1/trading-mode` | Verified paper mode, execution flag |
+| `create_order_intent(symbol, strategy, idempotency_key=None)` | `POST bot-engine /api/v1/order-intents` | **Proposal only**: executes nothing; a human must approve it. Sends `Idempotency-Key` (generated if omitted, and returned so the agent can retry with it) |
+| `get_order_intent(intent_id)` | `GET bot-engine /api/v1/order-intents/{id}` | `intent_id` must be a UUID |
+| `list_order_intents(status=None, limit=50)` | `GET bot-engine /api/v1/order-intents` | `status` from the schema enum, `limit` 1-200 |
 
-**There is no order capability.** The gateway can only reach the endpoints in
-`ALLOWED_ENDPOINTS` ([upstream.py](src/agent_gateway/upstream.py)). Its service token
-holds only `market:read` and `portfolio:read`. bot-engine refuses to load an agent token
-with a write scope, and answers 403 on the order route even when execution is enabled.
+**The agent can propose, never execute.** `create_order_intent` creates an order intent
+that bot-engine sizes and risk-checks; a human approves it (or it expires) before anything
+is submitted, on Alpaca paper only. See [ORDER_INTENTS.md](../docs/runbooks/ORDER_INTENTS.md).
+There are no approve, reject, cancel, kill-switch or direct order tools. The gateway can
+only reach the endpoints in `ALLOWED_ENDPOINTS` ([upstream.py](src/agent_gateway/upstream.py)).
+Its service token holds only `market:read`, `portfolio:read` and `intent:create`, **never
+`intent:approve`** (ADR-003): bot-engine refuses to issue or load an agent token with
+`intent:approve`, and answers 403 on every other write route even if this code changed.
 
 ## Safety properties
 
-- **Input validation.** Symbols and strategy names are validated before any request.
-- **Sanitized errors.** Raw broker errors and unexpected fields never reach the agent.
+- **Input validation.** Symbols, strategy names, idempotency keys (`^[A-Za-z0-9._:-]{8,128}$`), intent IDs (UUID) and statuses are validated before any request.
+- **Sanitized errors.** Raw broker errors and unexpected fields never reach the agent. Errors read `<code>: <fixed message> (error=<service error code>, request_id=<id>)`; for example `conflict: the kill switch is engaged; no order intent was created (error=kill_switch_engaged, request_id=mcp-agent-3f9c...)`. The service's free-text `message`/`detail` is not forwarded (except signal-service validation messages).
 - **No redirects.** The gateway never follows redirects. Plain `http` is allowed only to `localhost`, so the token never leaves the host in clear text.
 - **Rate limit.** Calls are limited per agent (`RATE_LIMIT_PER_MINUTE`, default 30).
 - **Audit.** Each tool call writes one JSON line to **stderr**, plus `AUDIT_LOG_FILE` if set. The line holds the actor, tool, arguments, outcome, error code and duration, and never the token. stdout is reserved for the MCP protocol.
@@ -28,7 +35,7 @@ with a write scope, and answers 403 on the order route even when execution is en
 ## Setup
 
 1. Start signal-service and bot-engine (see the root README).
-2. Issue a gateway token and add it to the shared table, following [SERVICE_TOKENS.md](../docs/runbooks/SERVICE_TOKENS.md). Use type `agent` and scopes `market:read` and `portfolio:read`.
+2. Issue a gateway token and add it to the shared table, following [SERVICE_TOKENS.md](../docs/runbooks/SERVICE_TOKENS.md). Use type `agent` and scopes `market:read`, `portfolio:read` and `intent:create`. Never give it `intent:approve`, `orders:place-legacy` or `admin:*`. A token issued before BL-26 (read scopes only) still works for the read tools; `create_order_intent` then fails with `forbidden: ... (requires intent:create)`.
 3. Install the gateway with Python 3.11+:
    ```sh
    cd agent-gateway

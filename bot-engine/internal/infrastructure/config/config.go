@@ -7,6 +7,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 // PaperBrokerHost is the only Alpaca trading host the engine accepts (ADR-005 §5.1).
@@ -50,6 +53,9 @@ type Config struct {
 	// they still need a token.
 	WSAllowedOrigins []string
 
+	// Risk holds the order-intent settings (ADR-005 §5.3–5.5, M3).
+	Risk RiskConfig
+
 	// verified is set by Validate once the paper-mode guard has passed.
 	verified bool
 }
@@ -71,7 +77,13 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	risk, err := loadRisk()
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
+		Risk:                  risk,
 		Environment:           getEnv("ENV", "development"),
 		Port:                  getEnvInt("PORT", 8080),
 		PaperTrading:          paper,
@@ -175,6 +187,85 @@ func getEnvBoolStrict(key string, defaultValue bool) (bool, error) {
 		return false, fmt.Errorf("%s must be a boolean, got %q", key, v)
 	}
 	return b, nil
+}
+
+// RiskConfig holds the order-intent and risk-engine settings. Every value is
+// parsed strictly: an unparseable or out-of-range value is fatal.
+type RiskConfig struct {
+	IntentTTL              time.Duration   // INTENT_TTL: approval deadline after creation
+	SignalMaxAge           time.Duration   // RISK_SIGNAL_MAX_AGE: oldest signal an intent may use
+	MaxOrderNotional       decimal.Decimal // RISK_MAX_ORDER_NOTIONAL: absolute cap per order, in account currency
+	SymbolAllowlist        []string        // RISK_SYMBOL_ALLOWLIST: set but empty = reject every symbol
+	StrategyAllowlist      []string        // RISK_STRATEGY_ALLOWLIST: set but empty = reject every strategy
+	AllowExtendedHours     bool            // RISK_ALLOW_EXTENDED_HOURS: skip the market-open check
+	IntentRateLimitPerHour int             // INTENT_RATE_LIMIT_PER_HOUR: creations per actor
+}
+
+// DefaultRiskConfig is the conservative paper-trading default.
+func DefaultRiskConfig() RiskConfig {
+	return RiskConfig{
+		IntentTTL:              5 * time.Minute,
+		SignalMaxAge:           5 * time.Minute,
+		MaxOrderNotional:       decimal.NewFromInt(1000),
+		SymbolAllowlist:        []string{"SPY", "QQQ", "AAPL", "MSFT"},
+		StrategyAllowlist:      []string{"rsi", "ma_cross"},
+		IntentRateLimitPerHour: 10,
+	}
+}
+
+func loadRisk() (RiskConfig, error) {
+	r := DefaultRiskConfig()
+	var err error
+	if r.IntentTTL, err = getEnvDuration("INTENT_TTL", r.IntentTTL, time.Minute, time.Hour); err != nil {
+		return r, err
+	}
+	if r.SignalMaxAge, err = getEnvDuration("RISK_SIGNAL_MAX_AGE", r.SignalMaxAge, 30*time.Second, time.Hour); err != nil {
+		return r, err
+	}
+	if v := strings.TrimSpace(os.Getenv("RISK_MAX_ORDER_NOTIONAL")); v != "" {
+		d, perr := decimal.NewFromString(v)
+		if perr != nil || !d.IsPositive() {
+			return r, fmt.Errorf("RISK_MAX_ORDER_NOTIONAL must be a positive number, got %q", v)
+		}
+		r.MaxOrderNotional = d
+	}
+	// A variable that is set (even to "") replaces the default list.
+	if v, ok := os.LookupEnv("RISK_SYMBOL_ALLOWLIST"); ok {
+		r.SymbolAllowlist = upper(splitList(v))
+	}
+	if v, ok := os.LookupEnv("RISK_STRATEGY_ALLOWLIST"); ok {
+		r.StrategyAllowlist = splitList(v)
+	}
+	if r.AllowExtendedHours, err = getEnvBoolStrict("RISK_ALLOW_EXTENDED_HOURS", false); err != nil {
+		return r, err
+	}
+	if v := strings.TrimSpace(os.Getenv("INTENT_RATE_LIMIT_PER_HOUR")); v != "" {
+		n, perr := strconv.Atoi(v)
+		if perr != nil || n < 1 || n > 1000 {
+			return r, fmt.Errorf("INTENT_RATE_LIMIT_PER_HOUR must be an integer in [1, 1000], got %q", v)
+		}
+		r.IntentRateLimitPerHour = n
+	}
+	return r, nil
+}
+
+func getEnvDuration(key string, def, lo, hi time.Duration) (time.Duration, error) {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d < lo || d > hi {
+		return 0, fmt.Errorf("%s must be a duration in [%s, %s], got %q", key, lo, hi, v)
+	}
+	return d, nil
+}
+
+func upper(in []string) []string {
+	for i, s := range in {
+		in[i] = strings.ToUpper(s)
+	}
+	return in
 }
 
 // splitList parses a comma-separated list, dropping empty items.

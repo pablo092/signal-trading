@@ -85,10 +85,13 @@ func main() {
 	// Relay domain events to WebSocket clients as contract events (BL-16).
 	bus.Subscribe(usecases.EventSignalReceived, hub.HandleDomainEvent)
 	bus.Subscribe(usecases.EventOrderPlaced, hub.HandleDomainEvent)
+	bus.Subscribe(usecases.EventOrderFilled, hub.HandleDomainEvent)
+	bus.Subscribe(usecases.EventIntentUpdated, hub.HandleDomainEvent)
 
 	// ── Persistence (BL-14): Postgres when DATABASE_URL is set, else in memory ──
 	var (
 		orderRepo  ports.OrderRepositoryPort
+		intentRepo ports.IntentRepositoryPort
 		auditLog   ports.AuditLogPort
 		killStore  ports.KillSwitchStore
 		closeStore = func() {}
@@ -104,10 +107,12 @@ func main() {
 		}
 		logger.Info("postgres.ready", zap.Strings("migrations_applied", applied))
 		orderRepo, auditLog, killStore = postgres.NewOrderRepo(pool), postgres.NewAuditLog(pool), postgres.NewKillSwitchStore(pool)
+		intentRepo = postgres.NewIntentRepo(pool)
 		closeStore = pool.Close
 	} else {
-		logger.Warn("persistence.in_memory: DATABASE_URL is not set; orders and the kill-switch flag do not survive a restart, audit events go to the log only")
+		logger.Warn("persistence.in_memory: DATABASE_URL is not set; orders, order intents and the kill-switch flag do not survive a restart, audit events go to the log only")
 		orderRepo, auditLog, killStore = repository.NewInMemoryOrderRepo(), auditlog.NewMemory(logger), &auditlog.MemoryKillSwitch{}
+		intentRepo = repository.NewInMemoryIntentRepo()
 	}
 	defer closeStore()
 
@@ -125,6 +130,37 @@ func main() {
 	}
 	placeOrderUC := usecases.NewPlaceOrderUseCase(alpacaBroker, orderRepo, signalSvc, bus, riskRules, logger).
 		WithAudit(auditLog).WithKillSwitch(killSwitch)
+
+	// ── Order intents (M3, ADR-005 §5.3–5.5) ─────────────────
+	riskPolicy := usecases.RiskPolicy{
+		Rules:              riskRules,
+		SignalMaxAge:       cfg.Risk.SignalMaxAge,
+		MaxOrderNotional:   cfg.Risk.MaxOrderNotional,
+		SymbolAllowlist:    cfg.Risk.SymbolAllowlist,
+		StrategyAllowlist:  cfg.Risk.StrategyAllowlist,
+		AllowExtendedHours: cfg.Risk.AllowExtendedHours,
+	}
+	if err := riskPolicy.Validate(); err != nil {
+		logger.Fatal("risk_policy.invalid", zap.Error(err))
+	}
+	intentSvc := usecases.NewIntentService(usecases.IntentDeps{
+		Intents: intentRepo, Orders: orderRepo, Signals: signalSvc, Broker: alpacaBroker,
+		Risk:       usecases.NewRiskEngine(riskPolicy, alpacaBroker, killSwitch),
+		KillSwitch: killSwitch, Audit: auditLog, Publisher: bus, Logger: logger,
+		Policy: usecases.IntentPolicy{
+			TTL: cfg.Risk.IntentTTL, RateLimitPerHour: cfg.Risk.IntentRateLimitPerHour,
+			ExecutionEnabled: cfg.OrderExecutionEnabled,
+		},
+	})
+	reconciler := usecases.NewReconciler(usecases.ReconcilerDeps{
+		Broker: alpacaBroker, Orders: orderRepo, Intents: intentRepo, Audit: auditLog, Publisher: bus, Logger: logger,
+	})
+	logger.Info("order_intents.ready",
+		zap.Duration("ttl", cfg.Risk.IntentTTL), zap.Duration("signal_max_age", cfg.Risk.SignalMaxAge),
+		zap.String("max_order_notional", cfg.Risk.MaxOrderNotional.String()),
+		zap.Strings("symbol_allowlist", cfg.Risk.SymbolAllowlist), zap.Strings("strategy_allowlist", cfg.Risk.StrategyAllowlist),
+		zap.Bool("execution_enabled", cfg.OrderExecutionEnabled),
+	)
 
 	// ── Prometheus registry ──────────────────────────────────
 	reg := prometheus.NewRegistry()
@@ -163,6 +199,7 @@ func main() {
 		Tokens:     tokens,
 		PlaceOrder: placeOrderUC,
 		KillSwitch: killSwitch,
+		Intents:    intentSvc,
 		Broker:     alpacaBroker,
 		Hub:        hub,
 		Registry:   reg,
@@ -171,10 +208,11 @@ func main() {
 
 	// ── Graceful shutdown ─────────────────────────────────────
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:        fmt.Sprintf(":%d", cfg.Port),
+		Handler:     router,
+		ReadTimeout: 15 * time.Second,
+		// Approving an intent re-reads every risk input and submits (up to ~35 s).
+		WriteTimeout: 45 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
@@ -182,6 +220,8 @@ func main() {
 	defer cancel()
 
 	go hub.Run(ctx)
+	go intentSvc.RunExpiry(ctx, 15*time.Second)
+	go reconciler.Run(ctx) // trade-update stream + polling of open orders (BL-23)
 
 	go func() {
 		logger.Info("bot_engine.http_listening", zap.Int("port", cfg.Port))

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "order-intent-list.schema.json",
+  "title": "OrderIntentList",
+  "description": "GET /api/v1/order-intents: newest first.",
+  "type": "object",
+  "required": ["intents"],
+  "additionalProperties": false,
+  "properties": {
+    "intents": {"type": "array", "items": {"$ref": "order-intent.schema.json"}}
+  }
+}

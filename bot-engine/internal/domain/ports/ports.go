@@ -5,6 +5,7 @@ package ports
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -31,6 +32,9 @@ type DomainEvent struct {
 	Type    string      // e.g. "OrderPlaced", "OrderFilled"
 	Payload interface{} // the event data (usually an entity)
 }
+
+// ErrOrderNotFound is returned by order repositories for an unknown order.
+var ErrOrderNotFound = errors.New("order not found")
 
 // OrderRepositoryPort is the outbound port for persisting and querying orders.
 type OrderRepositoryPort interface {

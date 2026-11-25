@@ -2,6 +2,27 @@
 # Bot Engine — Kubernetes manifests
 # Namespace: tradingbot  (create with: kubectl create namespace tradingbot)
 # Apply: kubectl apply -f bot-engine/bot-engine.yml
+#
+# Operator notes (BL-24 / TD-17, ADR-005 §5.6):
+# - NOT the current deploy target: backends run on Fly.io (make deploy-fly). Review
+#   these manifests before using them against a real cluster.
+# - Single writer: bot-engine is the ONLY order executor. It must run exactly one
+#   pod: replicas: 1, strategy Recreate (no surge pod during rollouts), and NO
+#   HorizontalPodAutoscaler. Do not add one. If scaling is ever needed, implement
+#   leader election (DB advisory lock) first.
+# - Image: set <TAG> to the git SHA tag CI pushes (sha-<short-sha>, see
+#   .github/workflows/bot-engine.yml) before applying, e.g.
+#     kubectl set image deployment/bot-engine \
+#       bot-engine=ghcr.io/pablo092/signal-trading/bot-engine:sha-abc1234 -n tradingbot
+#   Never deploy :latest.
+# - Secrets: the Secret below holds placeholders only (REPLACE_ME). Do not commit
+#   real values. Use sealed-secrets or external-secrets in any real cluster.
+# - NetworkPolicy assumptions: the ingress controller runs in namespace
+#   "ingress-nginx" and Prometheus in namespace "monitoring" (matched through the
+#   automatic kubernetes.io/metadata.name label, k8s >= 1.21). Adjust if yours differ.
+# - No Postgres/Redis/Jaeger manifests exist in this repo. DATABASE_URL must point
+#   at an external/managed Postgres; add a matching egress rule (see the commented
+#   template in bot-engine-egress) when you know where it lives.
 # ════════════════════════════════════════════════════════════════
 ---
 apiVersion: v1
@@ -10,7 +31,8 @@ metadata:
   name: tradingbot
 
 ---
-# ── ConfigMap (non-secret config) ────────────────────────────────
+# ── ConfigMap (non-secret config only) ───────────────────────────
+# Safe defaults: paper mode, order execution OFF, paper broker host.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -23,20 +45,40 @@ data:
   ORDER_EXECUTION_ENABLED: "false"
   ALPACA_BASE_URL:    "https://paper-api.alpaca.markets"
   SIGNAL_SERVICE_URL: "http://signal-service:8000"
+  KILL_SWITCH:        "false"
+  WS_ALLOWED_ORIGINS: ""          # empty = no browser origins allowed; set explicitly
+  # OTEL_EXPORTER_OTLP_ENDPOINT is intentionally unset: there is no Jaeger/OTLP
+  # collector manifest in this repo. Set it (and add an egress rule) when one exists.
+  # ── M3 risk settings (ADR-005 §5.5) ──
+  INTENT_TTL:                 "5m"
+  RISK_SIGNAL_MAX_AGE:        "5m"
+  RISK_MAX_ORDER_NOTIONAL:    "1000"
+  RISK_SYMBOL_ALLOWLIST:      "SPY,QQQ,AAPL,MSFT"
+  RISK_STRATEGY_ALLOWLIST:    "rsi,ma_cross"
+  RISK_ALLOW_EXTENDED_HOURS:  "false"
+  INTENT_RATE_LIMIT_PER_HOUR: "10"
 
 ---
 # ── Secret (sensitive values) ────────────────────────────────────
-# Replace base64 values:
-#   echo -n "YOUR_KEY" | base64
+# PLACEHOLDERS ONLY. Never commit real values to this file.
+# In a real cluster create this Secret out-of-band, preferably via
+# sealed-secrets (SealedSecret) or external-secrets (ExternalSecret), e.g.:
+#   kubectl -n tradingbot create secret generic bot-engine-secrets \
+#     --from-literal=ALPACA_API_KEY=... --from-literal=ALPACA_SECRET_KEY=... ...
 apiVersion: v1
 kind: Secret
 metadata:
   name: bot-engine-secrets
   namespace: tradingbot
 type: Opaque
-data:
-  ALPACA_API_KEY:    UkVQTEFDRV9XSVRIX1JFQUxfS0VZ    # base64("REPLACE_WITH_REAL_KEY")
-  ALPACA_SECRET_KEY: UkVQTEFDRV9XSVRIX1JFQUxfU0VDUkVU  # base64("REPLACE_WITH_REAL_SECRET")
+stringData:
+  ALPACA_API_KEY:       "REPLACE_ME"
+  ALPACA_SECRET_KEY:    "REPLACE_ME"
+  AUTH_TOKENS:          "REPLACE_ME"   # scoped token table (ADR-003), JSON
+  SIGNAL_SERVICE_TOKEN: "REPLACE_ME"   # must appear in signal-service AUTH_TOKENS
+  # Optional. Unset = in-memory orders/intents/audit (lost on restart). Uncomment
+  # only when a Postgres exists and its egress rule is in place:
+  # DATABASE_URL:       "REPLACE_ME"   # postgres://user:password@host:5432/db
 
 ---
 # ── Deployment ───────────────────────────────────────────────────
@@ -49,15 +91,12 @@ metadata:
     app: bot-engine
     version: "1.0.0"
 spec:
-  replicas: 1          # Single replica — order idempotency is critical
+  replicas: 1          # Single order executor (ADR-005 §5.6). Never raise; no HPA.
   selector:
     matchLabels:
       app: bot-engine
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 0    # No downtime during deploys
-      maxSurge: 1
+    type: Recreate     # Old pod stops before the new one starts: never two executors.
   template:
     metadata:
       labels:
@@ -68,10 +107,19 @@ spec:
         prometheus.io/path:   "/metrics"
     spec:
       terminationGracePeriodSeconds: 30
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534     # nobody
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: bot-engine
-          image: ghcr.io/REPLACE_ORG/bot-engine:latest  # updated by CI/CD
-          imagePullPolicy: Always
+          # <TAG> must be replaced with the git SHA tag (sha-<short-sha>) at deploy time.
+          image: ghcr.io/pablo092/signal-trading/bot-engine:<TAG>
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8080
@@ -109,6 +157,15 @@ spec:
             runAsUser: 65534     # nobody
             capabilities:
               drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 
 ---
 # ── Service ──────────────────────────────────────────────────────
@@ -129,43 +186,124 @@ spec:
       targetPort: 8080
   type: ClusterIP
 
----
-# ── HorizontalPodAutoscaler ───────────────────────────────────────
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: bot-engine
-  namespace: tradingbot
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: bot-engine
-  minReplicas: 1
-  maxReplicas: 3
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 70
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: 80
+# ── No HorizontalPodAutoscaler ───────────────────────────────────
+# Removed on purpose (BL-24 / ADR-005 §5.6): more than one engine pod means
+# duplicate order execution. Do not add an HPA for bot-engine.
+#
+# ── No PodDisruptionBudget ───────────────────────────────────────
+# Removed: minAvailable: 1 on a single-replica Deployment blocks every node drain.
+# A brief engine outage during a drain is acceptable; two executors are not.
 
 ---
-# ── PodDisruptionBudget ───────────────────────────────────────────
-apiVersion: policy/v1
-kind: PodDisruptionBudget
+# ── NetworkPolicy: default deny (namespace-wide) ─────────────────
+# Identical copy in signal-service/signal-service.yml so either file is safe
+# to apply alone. Everything not explicitly allowed below is denied.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
 metadata:
-  name: bot-engine
+  name: default-deny-all
   namespace: tradingbot
 spec:
-  minAvailable: 1
-  selector:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# ── NetworkPolicy: DNS egress (namespace-wide) ───────────────────
+# Identical copy in signal-service/signal-service.yml.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: tradingbot
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# ── NetworkPolicy: bot-engine ingress ────────────────────────────
+# Assumes the ingress controller lives in namespace "ingress-nginx" and
+# Prometheus in namespace "monitoring" (automatic kubernetes.io/metadata.name
+# label). Change the selectors if your cluster differs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bot-engine-ingress
+  namespace: tradingbot
+spec:
+  podSelector:
     matchLabels:
       app: bot-engine
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring    # /metrics scraping
+      ports:
+        - protocol: TCP
+          port: 8080
+
+---
+# ── NetworkPolicy: bot-engine egress ─────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bot-engine-egress
+  namespace: tradingbot
+spec:
+  podSelector:
+    matchLabels:
+      app: bot-engine
+  policyTypes:
+    - Egress
+  egress:
+    # engine → signal-service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: signal-service
+      ports:
+        - protocol: TCP
+          port: 8000
+    # Alpaca (paper-api.alpaca.markets, data.alpaca.markets, stream.data.alpaca.markets).
+    # NetworkPolicy cannot filter by hostname, so this allows TCP 443 to any public
+    # address (private, link-local/metadata and CGNAT ranges excluded). Use an
+    # egress gateway or FQDN-aware CNI policy (e.g. Cilium toFQDNs) to narrow it.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+      ports:
+        - protocol: TCP
+          port: 443
+    # Postgres: no Postgres manifest exists in this repo. When DATABASE_URL points
+    # at a known target, add a rule like:
+    # - to:
+    #     - podSelector:
+    #         matchLabels:
+    #           app: postgres
+    #   ports:
+    #     - protocol: TCP
+    #       port: 5432

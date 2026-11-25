@@ -42,6 +42,19 @@ To revoke the demo: remove the `vercel-demo` entry from `AUTH_TOKENS` on both ap
 | `WS_ALLOWED_ORIGINS` | unset | no browser origin may open `/ws` (the web feed is disabled anyway) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | no traces exported (no collector on Fly) |
 
+## M3 runtime settings
+
+| Setting | Fly value | Effect |
+|---|---|---|
+| `ORDER_EXECUTION_ENABLED` | `false` | intents can be created and rejected, but **approval is refused** (`execution_disabled`); nothing reaches the broker |
+| `INTENT_TTL`, `RISK_SIGNAL_MAX_AGE` | unset (5m) | pending intents expire after 5 minutes; signals older than 5 minutes fail `signal_fresh` |
+| `RISK_MAX_ORDER_NOTIONAL` | unset ($1000) | absolute cap per order, on top of 5 % of equity |
+| `RISK_SYMBOL_ALLOWLIST` | unset (`SPY,QQQ,AAPL,MSFT`) | set-but-empty refuses every symbol |
+| `INTENT_RATE_LIMIT_PER_HOUR` | unset (10) | per actor, in memory |
+
+Intents live in memory without `DATABASE_URL` and are lost on restart. Enabling execution is a
+separate, explicit decision: see [ORDER_INTENTS.md](ORDER_INTENTS.md).
+
 Adding Postgres later: create a database, then `flyctl secrets set DATABASE_URL=... -a trading-bot-engine`.
 The engine applies its migrations on start and refuses to start if they fail.
 

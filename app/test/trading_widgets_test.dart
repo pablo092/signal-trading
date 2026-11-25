@@ -63,16 +63,16 @@ void main() {
       expect(find.text('STRONG'), findsOneWidget);
     });
 
-    testWidgets('shows Approve button when actionable and callback provided',
+    testWidgets('shows Propose trade button when actionable and callback provided',
         (tester) async {
       await tester.pumpWidget(_wrap(
         SignalCard(
           signal: _makeSignal(isActionable: true),
-          onApprove: () {},
+          onPropose: () {},
           onDismiss: () {},
         ),
       ));
-      expect(find.text('Approve Order'), findsOneWidget);
+      expect(find.text('Propose trade'), findsOneWidget);
       expect(find.text('Dismiss'), findsOneWidget);
     });
 
@@ -80,24 +80,24 @@ void main() {
       await tester.pumpWidget(_wrap(
         SignalCard(
           signal: _makeSignal(isActionable: false),
-          onApprove: null,
+          onPropose: null,
           onDismiss: null,
         ),
       ));
-      expect(find.text('Approve Order'), findsNothing);
+      expect(find.text('Propose trade'), findsNothing);
       expect(find.text('Dismiss'), findsNothing);
     });
 
-    testWidgets('onApprove callback fires on tap', (tester) async {
+    testWidgets('onPropose callback fires on tap', (tester) async {
       var approved = false;
       await tester.pumpWidget(_wrap(
         SignalCard(
           signal: _makeSignal(isActionable: true),
-          onApprove: () => approved = true,
+          onPropose: () => approved = true,
           onDismiss: () {},
         ),
       ));
-      await tester.tap(find.text('Approve Order'));
+      await tester.tap(find.text('Propose trade'));
       await tester.pump();
       expect(approved, isTrue);
     });
@@ -107,7 +107,7 @@ void main() {
       await tester.pumpWidget(_wrap(
         SignalCard(
           signal: _makeSignal(isActionable: true),
-          onApprove: () {},
+          onPropose: () {},
           onDismiss: () => dismissed = true,
         ),
       ));

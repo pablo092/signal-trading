@@ -77,7 +77,7 @@ func (b *AlpacaBroker) Capabilities() ports.BrokerCapabilities {
 		FractionalShares: true,
 		ShortSelling:     true,
 		LimitOrders:      true,
-		TradeStreaming:   false,
+		TradeStreaming:   true,
 	}
 }
 
@@ -214,6 +214,21 @@ func (b *AlpacaBroker) GetClock(ctx context.Context) (ports.MarketClock, error) 
 		return ports.MarketClock{}, err
 	}
 	return ports.MarketClock{IsOpen: c.IsOpen, Timestamp: c.Timestamp, NextOpen: c.NextOpen, NextClose: c.NextClose}, nil
+}
+
+// StreamTradeUpdates follows the account's trade updates (Alpaca SSE events
+// stream) until ctx ends or the stream fails; the caller reconnects. The
+// stream has no overall timeout, only the SDK's dial timeout.
+func (b *AlpacaBroker) StreamTradeUpdates(ctx context.Context, handler func(ports.TradeUpdate)) error {
+	err := b.client.StreamTradeUpdates(ctx, func(tu alpaca.TradeUpdate) {
+		o := tu.Order
+		handler(ports.TradeUpdate{Event: tu.Event, At: tu.At, Order: toBrokerOrder(&o)})
+	}, alpaca.StreamTradeUpdatesRequest{})
+	if err == nil || ctx.Err() != nil {
+		return ctx.Err()
+	}
+	// The SDK puts the raw response body in this error; never pass it on.
+	return fmt.Errorf("alpaca stream trade updates: %w", ports.ErrUnavailable)
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────

@@ -20,14 +20,16 @@ signal-trading/
 ```text
 Alpaca market data ──► signal-service ◄── HTTP + token ── bot-engine ──► Alpaca (paper)
                             ▲                                 │
-                            │ read-only tools                 └── WebSocket ──► Flutter app
-                      agent-gateway (MCP) ◄── Claude Code / Codex
+                            │ read tools + propose intents    └── WebSocket ──► Flutter app
+                      agent-gateway (MCP) ◄── Claude Code / Codex      (approvals: human only)
 ```
 
 Services talk over HTTP with **scoped service tokens** (ADR-003): every `/api/v1/*` route
-needs a token with the right scope, agent tokens can never hold write scopes, and an empty
-token table denies everything. Order routes return 403 unless `ORDER_EXECUTION_ENABLED=true`
-(ADR-005). See [docs/](docs/) for the audit, ADRs and the
+needs a token with the right scope, only human tokens can approve, and an empty token table
+denies everything. Orders go through **order intents** (ADR-005, M3): an agent or human proposes,
+the engine runs a fail-closed risk check, and a human approves before anything reaches the
+broker. Approval returns 403 unless `ORDER_EXECUTION_ENABLED=true`
+([ORDER_INTENTS.md](docs/runbooks/ORDER_INTENTS.md)). See [docs/](docs/) for the audit, ADRs and the
 [implementation backlog](docs/roadmap/IMPLEMENTATION_BACKLOG.md).
 
 | Layer | Technology |
@@ -95,7 +97,9 @@ GitHub Actions is currently unavailable (billing), so run them locally before a 
 
 - Paper only: bot-engine refuses to start unless `PAPER_TRADING=true` and the broker host is
   exactly `paper-api.alpaca.markets`.
-- `ORDER_EXECUTION_ENABLED=false` by default; agents can never hold an order scope.
+- `ORDER_EXECUTION_ENABLED=false` by default. Agents may propose order intents (`intent:create`)
+  but never approve them: `intent:approve` is human-only. Every intent passes 15 risk checks at
+  creation and again before submission, and one engine pod is the only order writer.
 - Kill switch: a human-only endpoint (or `KILL_SWITCH=true`) blocks every order and cancels open
   ones. It fails closed: an unreadable state counts as engaged. No order is sent unless its
   audit record was written first.
