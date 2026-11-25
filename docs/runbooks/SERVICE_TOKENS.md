@@ -41,6 +41,14 @@ Agent tokens holding a human-only scope make the engine refuse to start.
    - Fly.io: `fly secrets set AUTH_TOKENS='[...]' -a <app>`.
 5. Restart the services. An invalid table is fatal at startup. The error names the entry `id`, never the content.
 
+## MCP agent gateway
+
+The [agent-gateway](../../agent-gateway/README.md) uses one `agent` token with only
+`market:read` and `portfolio:read`. For example:
+`{"id": "mcp-gateway", "type": "agent", "sha256": "<digest>", "scopes": ["market:read", "portfolio:read"]}`.
+Give the plaintext token to the MCP client config as `GATEWAY_TOKEN`. Issue one token per
+agent if you want separate audit identities and separate revocation.
+
 ## bot-engine → signal-service
 
 bot-engine calls signal-service to get signals, so it needs its own token:
