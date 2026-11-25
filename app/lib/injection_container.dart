@@ -1,6 +1,7 @@
 import 'package:get_it/get_it.dart';
 import 'package:http/http.dart' as http;
 
+import 'features/portfolio/data/portfolio_api.dart';
 import 'features/signals/data/datasources/signal_remote_data_source.dart';
 import 'features/signals/data/repositories/signal_repository_impl.dart';
 import 'features/signals/domain/repositories/i_signal_repository.dart';
@@ -23,6 +24,10 @@ Future<void> setupDependencies({
       baseUrl: baseUrl,
       wsUrl: wsUrl,
     ),
+  );
+
+  sl.registerLazySingleton(
+    () => PortfolioApi(httpClient: sl(), baseUrl: baseUrl),
   );
 
   // ── Repositories ──────────────────────────────────────────

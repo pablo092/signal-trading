@@ -3,10 +3,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 
-import '../../../signals/domain/entities/signal_entity.dart';
-import '../../../signals/presentation/bloc/signal_bloc.dart';
+import '../../../../core/config.dart';
+import '../../../../injection_container.dart';
 import '../../../../shared/theme/trading_theme.dart';
 import '../../../../shared/widgets/trading_widgets.dart';
+import '../../../portfolio/data/portfolio_api.dart';
+import '../../../signals/domain/entities/signal_entity.dart';
+import '../../../signals/presentation/bloc/signal_bloc.dart';
+
+final _money = NumberFormat('#,##0.00');
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -18,7 +23,8 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   String _selectedSymbol = 'AAPL';
   String _selectedStrategy = 'rsi';
-  bool _wsConnected = false;
+  int _tab = 0;
+  late Future<PortfolioSnapshot> _portfolio;
 
   final List<String> _symbols = ['AAPL', 'TSLA', 'MSFT', 'NVDA', 'AMZN'];
   final List<String> _strategies = ['rsi', 'ma_cross'];
@@ -26,8 +32,11 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
+    _portfolio = sl<PortfolioApi>().fetch();
     _fetchSignal();
-    context.read<SignalBloc>().add(const SignalWatchStarted());
+    if (AppConfig.liveFeedEnabled) {
+      context.read<SignalBloc>().add(const SignalWatchStarted());
+    }
   }
 
   void _fetchSignal() {
@@ -35,6 +44,18 @@ class _DashboardPageState extends State<DashboardPage> {
       symbol: _selectedSymbol,
       strategy: _selectedStrategy,
     ));
+  }
+
+  void _refreshPortfolio() {
+    setState(() => _portfolio = sl<PortfolioApi>().fetch());
+  }
+
+  Future<void> _refreshAll() async {
+    _fetchSignal();
+    _refreshPortfolio();
+    try {
+      await _portfolio;
+    } catch (_) {}
   }
 
   @override
@@ -45,36 +66,89 @@ class _DashboardPageState extends State<DashboardPage> {
       body: RefreshIndicator(
         color: TradingTheme.accent,
         backgroundColor: TradingTheme.surface,
-        onRefresh: () async => _fetchSignal(),
+        onRefresh: _refreshAll,
         child: ListView(
           padding: const EdgeInsets.all(16),
-          children: [
-            ConnectionStatusBanner(isConnected: _wsConnected),
-            if (!_wsConnected) const SizedBox(height: 8),
-            _PortfolioSummarySection(),
-            const SizedBox(height: 16),
-            _SignalControlsSection(
-              selectedSymbol: _selectedSymbol,
-              selectedStrategy: _selectedStrategy,
-              symbols: _symbols,
-              strategies: _strategies,
-              onSymbolChanged: (v) => setState(() {
-                _selectedSymbol = v;
-                _fetchSignal();
-              }),
-              onStrategyChanged: (v) => setState(() {
-                _selectedStrategy = v;
-                _fetchSignal();
-              }),
-            ),
-            const SizedBox(height: 12),
-            _SignalSection(onFetch: _fetchSignal),
-            const SizedBox(height: 16),
-            _RecentSignalsSection(),
-          ],
+          children: _buildTab(),
         ),
       ),
-      bottomNavigationBar: _buildBottomNav(),
+      bottomNavigationBar: NavigationBar(
+        backgroundColor: TradingTheme.surface,
+        indicatorColor: TradingTheme.accent.withOpacity(0.2),
+        selectedIndex: _tab,
+        onDestinationSelected: (i) => setState(() => _tab = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard_rounded),
+            label: 'Dashboard',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.show_chart_outlined),
+            selectedIcon: Icon(Icons.show_chart_rounded),
+            label: 'Signals',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: Icon(Icons.account_balance_wallet_rounded),
+            label: 'Portfolio',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long_rounded),
+            label: 'Orders',
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildTab() {
+    switch (_tab) {
+      case 1:
+        return [
+          _controls(),
+          const SizedBox(height: 12),
+          _SignalSection(onFetch: _fetchSignal),
+          const SizedBox(height: 16),
+          const _SignalHistorySection(),
+        ];
+      case 2:
+        return [
+          _PortfolioSummarySection(future: _portfolio, onRetry: _refreshPortfolio),
+          const SizedBox(height: 16),
+          _PositionsSection(future: _portfolio),
+        ];
+      case 3:
+        return const [_OrdersInfoCard()];
+      default:
+        return [
+          const _DemoBanner(),
+          _PortfolioSummarySection(future: _portfolio, onRetry: _refreshPortfolio),
+          const SizedBox(height: 16),
+          _controls(),
+          const SizedBox(height: 12),
+          _SignalSection(onFetch: _fetchSignal),
+          const SizedBox(height: 16),
+          _RecentSignalsSection(),
+        ];
+    }
+  }
+
+  Widget _controls() {
+    return _SignalControlsSection(
+      selectedSymbol: _selectedSymbol,
+      selectedStrategy: _selectedStrategy,
+      symbols: _symbols,
+      strategies: _strategies,
+      onSymbolChanged: (v) {
+        setState(() => _selectedSymbol = v);
+        _fetchSignal();
+      },
+      onStrategyChanged: (v) {
+        setState(() => _selectedStrategy = v);
+        _fetchSignal();
+      },
     );
   }
 
@@ -97,43 +171,71 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.notifications_none_rounded),
-          onPressed: () {},
+          tooltip: 'Refresh',
+          icon: const Icon(Icons.refresh_rounded),
+          onPressed: _refreshAll,
         ),
         IconButton(
-          icon: const Icon(Icons.settings_outlined),
-          onPressed: () {},
+          tooltip: 'About',
+          icon: const Icon(Icons.info_outline_rounded),
+          onPressed: _showAbout,
         ),
       ],
     );
   }
 
-  Widget _buildBottomNav() {
-    return NavigationBar(
-      backgroundColor: TradingTheme.surface,
-      indicatorColor: TradingTheme.accent.withOpacity(0.2),
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.dashboard_outlined),
-          selectedIcon: Icon(Icons.dashboard_rounded),
-          label: 'Dashboard',
+  void _showAbout() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: TradingTheme.surface,
+        title: Text('About this demo', style: TradingTheme.titleMedium),
+        content: Text(
+          'Signals are computed live by signal-service from Alpaca market data '
+          '(RSI and EMA crossover strategies).\n\n'
+          'Portfolio data comes from an Alpaca PAPER account. '
+          'Order execution is disabled: nothing here can place an order.\n\n'
+          'Signals are algorithmic indicators, not financial advice.',
+          style: TradingTheme.bodyMedium,
         ),
-        NavigationDestination(
-          icon: Icon(Icons.show_chart_outlined),
-          selectedIcon: Icon(Icons.show_chart_rounded),
-          label: 'Signals',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.account_balance_wallet_outlined),
-          selectedIcon: Icon(Icons.account_balance_wallet_rounded),
-          label: 'Portfolio',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.receipt_long_outlined),
-          selectedIcon: Icon(Icons.receipt_long_rounded),
-          label: 'Orders',
-        ),
-      ],
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Demo banner ───────────────────────────────────────────────
+
+class _DemoBanner extends StatelessWidget {
+  const _DemoBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      decoration: BoxDecoration(
+        color: TradingTheme.neutral.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.science_outlined, size: 14, color: TradingTheme.neutral),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Paper trading demo · order execution disabled',
+              style: TradingTheme.caption.copyWith(color: TradingTheme.neutral),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -141,54 +243,151 @@ class _DashboardPageState extends State<DashboardPage> {
 // ── Portfolio Summary ─────────────────────────────────────────
 
 class _PortfolioSummarySection extends StatelessWidget {
+  final Future<PortfolioSnapshot> future;
+  final VoidCallback onRetry;
+  const _PortfolioSummarySection({required this.future, required this.onRetry});
+
   @override
   Widget build(BuildContext context) {
-    // In production this would come from a PortfolioBloc
-    const equity = 100250.00;
-    const dayPnL = 1240.50;
-    const dayPnLPct = 1.25;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Portfolio', style: TradingTheme.caption),
-        const SizedBox(height: 4),
-        Text(
-          '\$${NumberFormat('#,##0.00').format(equity)}',
-          style: TradingTheme.displayLarge,
-        ),
-        const SizedBox(height: 4),
-        PnLBadge(value: dayPnL, percent: dayPnLPct),
-        const SizedBox(height: 16),
-        Row(
+    return FutureBuilder<PortfolioSnapshot>(
+      future: future,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const LoadingCard(height: 140);
+        }
+        if (snap.hasError || !snap.hasData) {
+          return Card(
+            child: ListTile(
+              leading: const Icon(Icons.cloud_off, color: TradingTheme.loss),
+              title: Text('Portfolio unavailable', style: TradingTheme.bodyMedium),
+              trailing: TextButton(onPressed: onRetry, child: const Text('Retry')),
+            ),
+          );
+        }
+        final p = snap.data!;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: StatCard(
-                label: 'Open positions',
-                value: '3',
-                icon: Icons.pie_chart_outline_rounded,
-              ),
+            Text('Paper portfolio', style: TradingTheme.caption),
+            const SizedBox(height: 4),
+            Text('\$${_money.format(p.equity)}', style: TradingTheme.displayLarge),
+            const SizedBox(height: 4),
+            PnLBadge(value: p.unrealizedPnl),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: StatCard(
+                    label: 'Open positions',
+                    value: '${p.positions.length}',
+                    icon: Icons.pie_chart_outline_rounded,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: StatCard(
+                    label: 'Market',
+                    value: p.marketOpen ? 'Open' : 'Closed',
+                    valueColor: p.marketOpen ? TradingTheme.profit : TradingTheme.neutral,
+                    icon: Icons.schedule_rounded,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: StatCard(
+                    label: 'Mode',
+                    value: p.paperMode ? 'Paper' : 'Live',
+                    valueColor: TradingTheme.accent,
+                    icon: Icons.shield_outlined,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: StatCard(
-                label: "Today's trades",
-                value: '7',
-                icon: Icons.swap_horiz_rounded,
-              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _PositionsSection extends StatelessWidget {
+  final Future<PortfolioSnapshot> future;
+  const _PositionsSection({required this.future});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<PortfolioSnapshot>(
+      future: future,
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        final positions = snap.data!.positions;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text('Open positions', style: TradingTheme.titleMedium),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: StatCard(
-                label: 'Win rate',
-                value: '71%',
-                valueColor: TradingTheme.profit,
-                icon: Icons.emoji_events_outlined,
+            if (positions.isEmpty)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'No open positions in the paper account.',
+                    style: TradingTheme.bodyMedium,
+                  ),
+                ),
+              ),
+            ...positions.map(
+              (pos) => Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  title: Text(
+                    '${pos.symbol} × ${pos.quantity.toStringAsFixed(0)}',
+                    style: TradingTheme.bodyMedium,
+                  ),
+                  subtitle: Text(
+                    'Avg \$${_money.format(pos.averageEntryPrice)} · '
+                    'Now \$${_money.format(pos.currentPrice)}',
+                    style: TradingTheme.caption,
+                  ),
+                  trailing: PnLBadge(value: pos.unrealizedPnl),
+                ),
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+}
+
+// ── Orders ────────────────────────────────────────────────────
+
+class _OrdersInfoCard extends StatelessWidget {
+  const _OrdersInfoCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.lock_outline_rounded, color: TradingTheme.neutral, size: 32),
+            const SizedBox(height: 12),
+            Text('Order execution is disabled', style: TradingTheme.titleMedium),
+            const SizedBox(height: 8),
+            Text(
+              'This demo runs against an Alpaca paper account with execution '
+              'turned off. Orders will come back as human-approved order '
+              'intents (milestone M3); agents and this app can only read.',
+              style: TradingTheme.bodyMedium,
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -276,21 +475,24 @@ class _SignalSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<SignalBloc, SignalState>(
       builder: (context, state) {
-        return switch (state) {
-          SignalInitial() => FilledButton.icon(
-              onPressed: onFetch,
-              icon: const Icon(Icons.bolt_rounded),
-              label: const Text('Generate Signal'),
-            ),
+        final loading = state is SignalLoading;
+        final generate = SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: loading ? null : onFetch,
+            icon: const Icon(Icons.bolt_rounded),
+            label: Text(loading ? 'Generating…' : 'Generate Signal'),
+          ),
+        );
+        final Widget body = switch (state) {
           SignalLoading() => const LoadingCard(height: 200),
           SignalLoaded(:final signal, :final history) => Column(
               children: [
                 SignalCard(
                   signal: signal,
                   onApprove: signal.isActionable
-                      ? () => _showApproveDialog(context, signal)
+                      ? () => _showExecutionDisabled(context, signal)
                       : null,
-                  onDismiss: signal.isActionable ? () {} : null,
                 ),
                 if (history.length > 1) ...[
                   const SizedBox(height: 16),
@@ -306,69 +508,53 @@ class _SignalSection extends StatelessWidget {
                     const Icon(Icons.error_outline, color: TradingTheme.loss, size: 32),
                     const SizedBox(height: 8),
                     Text(message, style: TradingTheme.bodyMedium, textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    FilledButton(onPressed: onFetch, child: const Text('Retry')),
                   ],
                 ),
               ),
             ),
           _ => const SizedBox.shrink(),
         };
+        return Column(
+          children: [
+            body,
+            const SizedBox(height: 12),
+            generate,
+          ],
+        );
       },
     );
   }
 
-  void _showApproveDialog(BuildContext context, SignalEntity signal) {
+  void _showExecutionDisabled(BuildContext context, SignalEntity signal) {
     showDialog<void>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: TradingTheme.surface,
-        title: Text('Confirm Order', style: TradingTheme.titleMedium),
+        title: Text(
+          '${signal.direction.name.toUpperCase()} ${signal.symbol}',
+          style: TradingTheme.titleMedium.copyWith(
+            color: TradingTheme.directionColor(signal.direction.name),
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '${signal.direction.name.toUpperCase()} ${signal.symbol}',
-              style: TradingTheme.titleMedium.copyWith(
-                color: TradingTheme.directionColor(signal.direction.name),
-              ),
-            ),
-            const SizedBox(height: 8),
             Text('Price: \$${signal.price.toStringAsFixed(2)}', style: TradingTheme.bodyMedium),
             Text('Strategy: ${signal.strategyName}', style: TradingTheme.caption),
             Text('Confidence: ${signal.confidencePercent}', style: TradingTheme.caption),
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: TradingTheme.neutral.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: TradingTheme.neutral.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: TradingTheme.neutral, size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'This will submit a paper trading order (no real money).',
-                      style: TradingTheme.caption.copyWith(color: TradingTheme.neutral),
-                    ),
-                  ),
-                ],
-              ),
+            Text(
+              'Order execution is disabled in this demo (paper account). '
+              'No order will be placed.',
+              style: TradingTheme.caption.copyWith(color: TradingTheme.neutral),
             ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
           FilledButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Place Order'),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -428,7 +614,7 @@ class _ConfidenceSparkline extends StatelessWidget {
   }
 }
 
-// ── Recent Signals List ───────────────────────────────────────
+// ── Recent Signals ────────────────────────────────────────────
 
 class _RecentSignalsSection extends StatelessWidget {
   @override
@@ -439,7 +625,6 @@ class _RecentSignalsSection extends StatelessWidget {
           return const SizedBox.shrink();
         }
         final recent = state.history.reversed.skip(1).take(5).toList();
-
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -448,6 +633,31 @@ class _RecentSignalsSection extends StatelessWidget {
               child: Text('Recent Signals', style: TradingTheme.titleMedium),
             ),
             ...recent.map((s) => _RecentSignalRow(signal: s)),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SignalHistorySection extends StatelessWidget {
+  const _SignalHistorySection();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<SignalBloc, SignalState>(
+      builder: (context, state) {
+        final history = state is SignalLoaded ? state.history : const <SignalEntity>[];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text('History (this session)', style: TradingTheme.titleMedium),
+            ),
+            if (history.isEmpty)
+              Text('No signals yet.', style: TradingTheme.caption),
+            ...history.reversed.map((s) => _RecentSignalRow(signal: s)),
           ],
         );
       },
