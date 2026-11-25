@@ -9,7 +9,7 @@ trading is refused at startup.
 ```text
 signal-trading/
 ├── signal-service/   # Python 3.11, FastAPI — computes signals from Alpaca market data
-├── bot-engine/       # Go 1.22, Gin — portfolio, risk rules, WebSocket, (disabled) order path
+├── bot-engine/       # Go 1.26, Gin — portfolio, risk rules, WebSocket, (disabled) order path
 ├── agent-gateway/    # Python, MCP over STDIO — read-only tools for AI agents
 ├── app/              # Flutter — dashboard (web build deployed to Vercel)
 ├── api/              # Vercel functions — server-side proxy for the web demo
@@ -32,7 +32,7 @@ token table denies everything. Order routes return 403 unless `ORDER_EXECUTION_E
 | Layer | Technology |
 | --- | --- |
 | Signals | Python 3.11, FastAPI, pandas, alpaca-py |
-| Engine | Go 1.22, Gin, zap, Prometheus |
+| Engine | Go 1.26, Gin, zap, Prometheus |
 | Agent gateway | MCP Python SDK 2.x, httpx |
 | Dashboard | Flutter 3, BLoC |
 | Broker | Alpaca Markets, **paper only** |
@@ -73,7 +73,7 @@ after setting its passwords in `.env`.
 | Service | Setup | Checks |
 | --- | --- | --- |
 | signal-service | [signal-service/README.md](signal-service/README.md) (venv + hashed lockfile) | `make test-signal lint-signal` |
-| bot-engine | Go 1.22 | `make test-engine lint-engine` |
+| bot-engine | Go 1.26 | `make test-engine lint-engine` |
 | agent-gateway | [agent-gateway/README.md](agent-gateway/README.md) | `make test-gateway lint-gateway` |
 | app | Flutter 3.41 | `cd app && flutter test` |
 

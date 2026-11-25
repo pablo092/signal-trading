@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 
 	"github.com/trading-bot/bot-engine/internal/domain/ports"
@@ -18,16 +19,16 @@ import (
 
 // signalResponse mirrors the JSON response from signal-service POST /api/v1/signals/generate.
 type signalResponse struct {
-	ID           string    `json:"id"`
-	Symbol       string    `json:"symbol"`
-	Direction    string    `json:"direction"`
-	Strength     string    `json:"strength"`
-	Price        float64   `json:"price"`
-	Confidence   float64   `json:"confidence"`
-	Reason       string    `json:"reason"`
-	StrategyName string    `json:"strategy_name"`
-	IsActionable bool      `json:"is_actionable"`
-	GeneratedAt  time.Time `json:"generated_at"`
+	ID           string          `json:"id"`
+	Symbol       string          `json:"symbol"`
+	Direction    string          `json:"direction"`
+	Strength     string          `json:"strength"`
+	Price        decimal.Decimal `json:"price"`
+	Confidence   float64         `json:"confidence"`
+	Reason       string          `json:"reason"`
+	StrategyName string          `json:"strategy_name"`
+	IsActionable bool            `json:"is_actionable"`
+	GeneratedAt  time.Time       `json:"generated_at"`
 }
 
 // Client calls the signal-service over HTTP.
@@ -110,4 +111,3 @@ func (c *Client) GetSignal(ctx context.Context, symbol, strategy string) (*ports
 		GeneratedAt:  sr.GeneratedAt,
 	}, nil
 }
-

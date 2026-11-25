@@ -4,11 +4,9 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/shopspring/decimal"
 )
-
-const eps = 1e-9
-
-func near(a, b float64) bool { return math.Abs(a-b) < eps }
 
 func TestDefaultRiskRules_AreValidAndDocumented(t *testing.T) {
 	r := DefaultRiskRules()
@@ -79,45 +77,44 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func d(s string) decimal.Decimal { return decimal.RequireFromString(s) }
+
 func TestCalcPositionSize(t *testing.T) {
 	r := DefaultRiskRules() // 5% per position
-	nan, inf := math.NaN(), math.Inf(1)
 	cases := []struct {
 		name          string
-		equity, price float64
-		want          float64
+		equity, price string
+		want          string
 	}{
-		{"5% of 100k at $100", 100_000, 100, 50},
-		{"5% of 100k at $354.24 is fractional", 100_000, 354.24, 5000 / 354.24},
-		{"price above budget gives < 1 share", 1_000, 100, 0.5},
-		{"zero equity", 0, 100, 0},
-		{"negative equity", -5_000, 100, 0},
-		{"zero price", 100_000, 0, 0},
-		{"negative price", 100_000, -1, 0},
-		{"NaN equity", nan, 100, 0},
-		{"NaN price", 100_000, nan, 0},
-		{"Inf equity", inf, 100, 0},
-		{"Inf price", 100_000, inf, 0},
+		{"5% of 100k at $100", "100000", "100", "50"},
+		{"fractional result is truncated to 6 dp", "100000", "354.24", "14.114724"}, // 5000/354.24 = 14.1147244...
+		{"price above budget gives < 1 share", "1000", "100", "0.5"},
+		{"never rounds up", "100", "3", "1.666666"},
+		{"zero equity", "0", "100", "0"},
+		{"negative equity", "-5000", "100", "0"},
+		{"zero price", "100000", "0", "0"},
+		{"negative price", "100000", "-1", "0"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := r.CalcPositionSize(tc.equity, tc.price)
-			if !near(got, tc.want) {
-				t.Fatalf("CalcPositionSize(%v, %v) = %v, want %v", tc.equity, tc.price, got, tc.want)
+			got := r.CalcPositionSize(d(tc.equity), d(tc.price))
+			if !got.Equal(d(tc.want)) {
+				t.Fatalf("CalcPositionSize(%s, %s) = %s, want %s", tc.equity, tc.price, got, tc.want)
 			}
 		})
 	}
 }
 
 func TestPositionValueNeverExceedsCap(t *testing.T) {
-	for _, pct := range []float64{0.01, 0.05, 0.10, 0.25} {
+	equity := d("123456.78")
+	for _, p := range []float64{0.01, 0.05, 0.10, 0.25} {
 		r := DefaultRiskRules()
-		r.MaxPositionSizePct = pct
-		for _, price := range []float64{0.5, 1, 17.3, 354.24, 4999.99} {
-			equity := 123_456.78
-			value := r.CalcPositionSize(equity, price) * price
-			if value > equity*pct+eps {
-				t.Fatalf("pct=%v price=%v: position value %v exceeds cap %v", pct, price, value, equity*pct)
+		r.MaxPositionSizePct = p
+		limit := equity.Mul(decimal.NewFromFloat(p))
+		for _, price := range []string{"0.5", "1", "17.3", "354.24", "4999.99"} {
+			value := r.CalcPositionSize(equity, d(price)).Mul(d(price))
+			if value.GreaterThan(limit) {
+				t.Fatalf("pct=%v price=%s: position value %s exceeds cap %s", p, price, value, limit)
 			}
 		}
 	}
@@ -126,22 +123,21 @@ func TestPositionValueNeverExceedsCap(t *testing.T) {
 func TestStopLossAndTakeProfitPrices(t *testing.T) {
 	r := DefaultRiskRules() // SL 3%, TP 6%
 	cases := []struct {
-		name   string
-		side   OrderSide
-		entry  float64
-		sl, tp float64
+		name          string
+		side          OrderSide
+		entry, sl, tp string
 	}{
-		{"buy: SL below, TP above", OrderSideBuy, 100, 97, 106},
-		{"sell: SL above, TP below", OrderSideSell, 100, 103, 94},
-		{"buy at fractional price", OrderSideBuy, 354.24, 354.24 * 0.97, 354.24 * 1.06},
+		{"buy: SL below, TP above", OrderSideBuy, "100", "97", "106"},
+		{"sell: SL above, TP below", OrderSideSell, "100", "103", "94"},
+		{"buy at fractional price is exact", OrderSideBuy, "354.24", "343.6128", "375.4944"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := r.StopLossPrice(tc.entry, tc.side); !near(got, tc.sl) {
-				t.Fatalf("StopLossPrice = %v, want %v", got, tc.sl)
+			if got := r.StopLossPrice(d(tc.entry), tc.side); !got.Equal(d(tc.sl)) {
+				t.Fatalf("StopLossPrice = %s, want %s", got, tc.sl)
 			}
-			if got := r.TakeProfitPrice(tc.entry, tc.side); !near(got, tc.tp) {
-				t.Fatalf("TakeProfitPrice = %v, want %v", got, tc.tp)
+			if got := r.TakeProfitPrice(d(tc.entry), tc.side); !got.Equal(d(tc.tp)) {
+				t.Fatalf("TakeProfitPrice = %s, want %s", got, tc.tp)
 			}
 		})
 	}
@@ -155,17 +151,17 @@ func TestProtectivePricesStayPositiveForAnyValidRules(t *testing.T) {
 	if err := r.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	entry := 10.0
+	entry := d("10")
 	for _, side := range []OrderSide{OrderSideBuy, OrderSideSell} {
 		sl, tp := r.StopLossPrice(entry, side), r.TakeProfitPrice(entry, side)
-		if sl <= 0 || tp <= 0 {
-			t.Fatalf("%s: non-positive price sl=%v tp=%v", side, sl, tp)
+		if !sl.IsPositive() || !tp.IsPositive() {
+			t.Fatalf("%s: non-positive price sl=%s tp=%s", side, sl, tp)
 		}
-		if side == OrderSideBuy && !(sl < entry && tp > entry) {
-			t.Fatalf("buy: want sl < entry < tp, got sl=%v tp=%v", sl, tp)
+		if side == OrderSideBuy && !(sl.LessThan(entry) && tp.GreaterThan(entry)) {
+			t.Fatalf("buy: want sl < entry < tp, got sl=%s tp=%s", sl, tp)
 		}
-		if side == OrderSideSell && !(sl > entry && tp < entry) {
-			t.Fatalf("sell: want tp < entry < sl, got sl=%v tp=%v", sl, tp)
+		if side == OrderSideSell && !(sl.GreaterThan(entry) && tp.LessThan(entry)) {
+			t.Fatalf("sell: want tp < entry < sl, got sl=%s tp=%s", sl, tp)
 		}
 	}
 }

@@ -38,13 +38,13 @@ type placeOrderRequest struct {
 
 // placeOrderResponse is the JSON body returned by POST /api/v1/orders/place.
 type placeOrderResponse struct {
-	Skipped    bool   `json:"skipped"`
-	SkipReason string `json:"skip_reason,omitempty"`
-	OrderID    string `json:"order_id,omitempty"`
-	Symbol     string `json:"symbol,omitempty"`
-	Side       string `json:"side,omitempty"`
+	Skipped    bool    `json:"skipped"`
+	SkipReason string  `json:"skip_reason,omitempty"`
+	OrderID    string  `json:"order_id,omitempty"`
+	Symbol     string  `json:"symbol,omitempty"`
+	Side       string  `json:"side,omitempty"`
 	Quantity   float64 `json:"quantity,omitempty"`
-	Status     string `json:"status,omitempty"`
+	Status     string  `json:"status,omitempty"`
 }
 
 // PlaceOrder godoc
@@ -88,11 +88,11 @@ func (h *OrdersHandler) PlaceOrder(c *gin.Context) {
 		SkipReason: out.SkipReason,
 	}
 	if out.Order != nil {
-		resp.OrderID  = out.Order.ID.String()
-		resp.Symbol   = out.Order.Symbol
-		resp.Side     = string(out.Order.Side)
-		resp.Quantity = out.Order.Quantity
-		resp.Status   = string(out.Order.Status)
+		resp.OrderID = out.Order.ID.String()
+		resp.Symbol = out.Order.Symbol
+		resp.Side = string(out.Order.Side)
+		resp.Quantity = out.Order.Quantity.InexactFloat64()
+		resp.Status = string(out.Order.Status)
 	}
 
 	c.JSON(http.StatusOK, resp)

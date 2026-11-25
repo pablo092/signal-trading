@@ -26,6 +26,8 @@ func NewPortfolioHandler(broker ports.BrokerPort, paperMode bool, logger *zap.Lo
 }
 
 // equityResponse is the JSON body for GET /api/v1/portfolio/equity.
+// Amounts are computed as decimals and only converted to JSON numbers here, to
+// keep the wire format stable until the contracts are versioned (BL-16).
 type equityResponse struct {
 	Equity     float64 `json:"equity"`
 	PaperMode  bool    `json:"paper_mode"`
@@ -42,19 +44,20 @@ type equityResponse struct {
 //	@Failure      502  {object}  apierror.Body  "broker_unavailable"
 //	@Router       /api/v1/portfolio/equity [get]
 func (h *PortfolioHandler) GetEquity(c *gin.Context) {
-	equity, err := h.broker.GetPortfolioEquity(c.Request.Context())
+	acct, err := h.broker.GetAccount(c.Request.Context())
 	if err != nil {
 		h.logger.Error("portfolio.equity_failed", zap.Error(err), zap.String("request_id", reqid.FromContext(c.Request.Context())))
 		apierror.Abort(c, http.StatusBadGateway, apierror.CodeBrokerUnavailable, "the broker did not return the account equity")
 		return
 	}
 
-	marketOpen, _ := h.broker.IsMarketOpen(c.Request.Context())
+	// Market status is informational: a clock failure must not hide the equity.
+	clock, _ := h.broker.GetClock(c.Request.Context())
 
 	c.JSON(http.StatusOK, equityResponse{
-		Equity:     equity,
+		Equity:     acct.Equity.InexactFloat64(),
 		PaperMode:  h.paperMode,
-		MarketOpen: marketOpen,
+		MarketOpen: clock.IsOpen,
 	})
 }
 
@@ -88,10 +91,10 @@ func (h *PortfolioHandler) GetPositions(c *gin.Context) {
 	for i, p := range positions {
 		items[i] = positionItem{
 			Symbol:            p.Symbol,
-			Quantity:          p.Quantity,
-			AverageEntryPrice: p.AverageEntryPrice,
-			CurrentPrice:      p.CurrentPrice,
-			UnrealizedPnL:     p.UnrealizedPnL,
+			Quantity:          p.Quantity.InexactFloat64(),
+			AverageEntryPrice: p.AverageEntryPrice.InexactFloat64(),
+			CurrentPrice:      p.CurrentPrice.InexactFloat64(),
+			UnrealizedPnL:     p.UnrealizedPnL.InexactFloat64(),
 		}
 	}
 
