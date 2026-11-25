@@ -18,12 +18,12 @@ samples, guidance on mobile development, and a full API reference.
 
 ## Deploy to Vercel (web)
 
-1. In the Vercel project: **Settings → Build & Deployment → Root Directory = `app`**.
-   The repo is a monorepo; without this Vercel detects the Python service and fails
-   with `PYTHON_ENTRYPOINT_NOT_FOUND`.
-2. Leave framework/build settings empty: [vercel.json](vercel.json) sets them.
-   [scripts/vercel-build.sh](scripts/vercel-build.sh) installs a pinned Flutter SDK
-   (3.41.9) and runs `flutter build web`.
+1. Import the repo in Vercel and leave **Root Directory empty** and the framework preset
+   on "Other". The root [vercel.json](../vercel.json) builds only this app, and
+   [.vercelignore](../.vercelignore) hides the backends so Vercel does not detect the
+   Python service (`PYTHON_ENTRYPOINT_NOT_FOUND`).
+2. [scripts/vercel-build.sh](scripts/vercel-build.sh) installs a pinned Flutter SDK
+   (3.41.9) and runs `flutter build web`; output is `app/build/web`.
 3. Optional environment variables (baked into the public bundle, so never put tokens here):
    - `SIGNAL_SERVICE_URL`: public https URL of signal-service (default `http://localhost:8000`)
    - `BOT_ENGINE_WS_URL`: public `wss://` URL of bot-engine `/ws` (default `ws://localhost:8080/ws`)

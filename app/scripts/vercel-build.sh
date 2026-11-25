@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build the Flutter web app on Vercel (Root Directory = app).
+# Build the Flutter web app on Vercel (invoked from the repo-root vercel.json).
 #
 # Vercel has no Flutter preinstalled, so this script fetches a pinned Flutter SDK
-# and runs `flutter build web`. Output: build/web (vercel.json outputDirectory).
+# and runs `flutter build web`. Output: app/build/web (vercel.json outputDirectory).
 #
 # Optional Vercel environment variables (baked into the bundle at build time,
 # so they must NOT contain secrets):
@@ -10,6 +10,7 @@
 #   BOT_ENGINE_WS_URL    e.g. wss://bot-engine.example.com/ws
 #   FLUTTER_VERSION      overrides the pinned SDK tag
 set -euo pipefail
+cd "$(dirname "$0")/.."   # run from app/ whatever the caller cwd
 
 FLUTTER_VERSION="${FLUTTER_VERSION:-3.41.9}"   # matches app/.metadata
 FLUTTER_DIR="${FLUTTER_DIR:-$HOME/flutter-sdk}"

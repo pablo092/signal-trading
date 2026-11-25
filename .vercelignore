@@ -1,0 +1,9 @@
+# Only the Flutter web app is deployed to Vercel.
+bot-engine/
+signal-service/
+agent-gateway/
+infra/
+docs/
+skills/
+.qodo/
+.claude/
