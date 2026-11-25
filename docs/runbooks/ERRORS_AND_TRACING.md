@@ -26,13 +26,20 @@ bot-engine and signal-service answer every error with the same JSON body:
 | `broker_unavailable` | 502 | bot-engine | Alpaca did not answer or failed; on the order route the order was **not** placed |
 | `signal_unavailable` | 502 | bot-engine | signal-service did not return a signal for the order route |
 | `order_rejected` | 422 | bot-engine | The broker refused the order (e.g. insufficient buying power); it is stored as `rejected` |
-| `order_outcome_unknown` | 502 | bot-engine | The broker did not confirm the order and could not be queried; it may exist. **Do not retry**: the order stays `pending` until reconciled (BL-23) |
+| `order_outcome_unknown` | 502 | bot-engine | The broker did not confirm the order and could not be queried; it may exist. **Do not retry**: the order stays `pending` until the reconciler resolves it (BL-23). On intent approval this is a `202` with the intent left `approved`, not an error |
 | `market_data_unavailable` | 503 | signal-service | Alpaca market data failed or timed out |
 | `kill_switch_engaged` | 409 | bot-engine | The kill switch is on (or its state could not be read): no order was sent. See [KILL_SWITCH.md](KILL_SWITCH.md) |
 | `kill_switch_forced` | 409 | bot-engine | `KILL_SWITCH=true` is set on the engine; the API cannot release it |
 | `kill_switch_unavailable` | 503 | bot-engine | The kill-switch state could not be read or written; trading stays refused |
 | `audit_unavailable` | 503 | bot-engine | The audit record could not be written before submitting, so the order was **not** sent (fails closed) and is stored as `rejected` |
-| `not_found` / `method_not_allowed` | 404 / 405 | both | Unknown route or method |
+| `idempotency_key_required` | 400 | bot-engine | `POST /order-intents` without a valid `Idempotency-Key` header (8-128 chars `[A-Za-z0-9._:-]`) |
+| `idempotency_key_reused` | 422 | bot-engine | The key was already used by this actor for a different request (symbol/strategy) |
+| `intent_exists` | 409 | bot-engine | An active intent already exists for this signal |
+| `intent_not_pending` | 409 | bot-engine | The intent is no longer `pending_approval` (already decided, canceled or submitted) |
+| `intent_expired` | 409 | bot-engine | The intent passed its TTL before the decision; it is now `expired` |
+| `not_intent_owner` | 403 | bot-engine | Only the actor that created an intent may cancel it |
+| `rate_limited` | 429 | bot-engine | The actor exceeded `INTENT_RATE_LIMIT_PER_HOUR` |
+| `not_found` / `method_not_allowed` | 404 / 405 | both | Unknown route, method, or order intent |
 | `internal_error` | 500 | both | Unexpected failure (panic or unhandled exception) |
 
 ## Following a request

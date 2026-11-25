@@ -13,20 +13,29 @@ from tests.conftest import TOKEN, FakeServices, audit_lines
 
 pytestmark = pytest.mark.anyio
 
-EXPECTED_TOOLS = {"list_strategies", "generate_signal", "get_portfolio_summary", "get_positions", "get_trading_mode"}
+READ_TOOLS = {
+    "list_strategies", "generate_signal", "get_portfolio_summary", "get_positions", "get_trading_mode",
+    "get_order_intent", "list_order_intents",
+}
+NO_ARG_TOOLS = {"list_strategies", "get_portfolio_summary", "get_positions", "get_trading_mode", "list_order_intents"}
+# The only write: proposing an intent. A human approves it in bot-engine (ADR-005).
+PROPOSE_TOOLS = {"create_order_intent"}
+EXPECTED_TOOLS = READ_TOOLS | PROPOSE_TOOLS
 
 
 def text(result: Any) -> str:
     return " ".join(getattr(c, "text", "") for c in result.content)
 
 
-async def test_only_read_only_tools_are_exposed(client: Client) -> None:
+async def test_only_read_and_propose_tools_are_exposed(client: Client) -> None:
     tools = (await client.list_tools()).tools
     assert {t.name for t in tools} == EXPECTED_TOOLS
     for t in tools:
-        assert t.annotations is not None and t.annotations.read_only_hint is True
+        assert t.annotations is not None
         assert t.annotations.destructive_hint is False
-        for word in ("order", "cancel", "submit", "buy", "sell", "trade"):
+        assert t.annotations.read_only_hint is (t.name in READ_TOOLS)
+        for word in ("approve", "reject", "cancel", "kill", "place", "submit", "execute", "delete",
+                     "modify", "buy", "sell", "trade"):
             assert word not in t.name
 
 
@@ -169,11 +178,13 @@ async def test_rate_limit(make_client: Callable[..., Client], audit_stream: io.S
 
 
 async def test_audit_never_contains_the_token(client: Client, audit_stream: io.StringIO) -> None:
-    for tool in EXPECTED_TOOLS - {"generate_signal"}:
+    for tool in NO_ARG_TOOLS:
         await client.call_tool(tool, {})
     await client.call_tool("generate_signal", {"symbol": "AAPL"})
+    await client.call_tool("create_order_intent", {"symbol": "AAPL", "strategy": "rsi"})
+    await client.call_tool("get_order_intent", {"intent_id": "7d0c1b2a-3e4f-4a5b-8c6d-7e8f9a0b1c2d"})
     assert TOKEN not in audit_stream.getvalue()
-    assert len(audit_lines(audit_stream)) == 5
+    assert len(audit_lines(audit_stream)) == len(EXPECTED_TOOLS)
 
 
 async def test_each_call_sends_request_id_and_audits_it(

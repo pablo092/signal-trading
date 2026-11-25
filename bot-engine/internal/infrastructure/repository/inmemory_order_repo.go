@@ -44,7 +44,7 @@ func (r *InMemoryOrderRepo) FindByID(_ context.Context, id interface{}) (*entiti
 	}
 	o, exists := r.orders[uid]
 	if !exists {
-		return nil, fmt.Errorf("order %s not found", uid)
+		return nil, fmt.Errorf("order %s: %w", uid, ports.ErrOrderNotFound)
 	}
 	return o, nil
 }

@@ -29,8 +29,18 @@ const (
 	CodeKillSwitchForced      = "kill_switch_forced"
 	CodeKillSwitchUnavailable = "kill_switch_unavailable"
 	CodeNotFound              = "not_found"
-	CodeMethodNotAllowed      = "method_not_allowed"
-	CodeInternal              = "internal_error"
+
+	// Order intents (M3, docs/runbooks/ORDER_INTENTS.md).
+	CodeIdempotencyKeyRequired = "idempotency_key_required"
+	CodeIdempotencyKeyReused   = "idempotency_key_reused"
+	CodeIntentExists           = "intent_exists"
+	CodeIntentNotPending       = "intent_not_pending"
+	CodeIntentExpired          = "intent_expired"
+	CodeNotIntentOwner         = "not_intent_owner"
+	CodeRateLimited            = "rate_limited"
+
+	CodeMethodNotAllowed = "method_not_allowed"
+	CodeInternal         = "internal_error"
 )
 
 // Body is the error envelope.

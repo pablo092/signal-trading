@@ -46,6 +46,7 @@ type Deps struct {
 	Tokens     *auth.Store
 	PlaceOrder *usecases.PlaceOrderUseCase
 	KillSwitch *usecases.KillSwitchService
+	Intents    *usecases.IntentService
 	Broker     ports.BrokerPort
 	Hub        WSServer
 	Registry   *prometheus.Registry
@@ -60,6 +61,7 @@ func Routes(d Deps) []Route {
 	orders := httphandlers.NewOrdersHandler(d.PlaceOrder, d.Config.OrderExecutionEnabled, d.Logger)
 	portfolio := httphandlers.NewPortfolioHandler(d.Broker, paper, d.Logger)
 	killSwitch := httphandlers.NewKillSwitchHandler(d.KillSwitch, d.Logger)
+	intents := httphandlers.NewIntentsHandler(d.Intents, d.Logger)
 	tradingMode := httphandlers.NewTradingModeHandler(httphandlers.TradingModeInfo{
 		Mode:                  mode,
 		Verified:              verified,
@@ -94,6 +96,15 @@ func Routes(d Deps) []Route {
 		// only a human admin:killswitch token may change it.
 		{http.MethodGet, "/api/v1/admin/kill-switch", auth.ScopePortfolioRead, killSwitch.Get},
 		{http.MethodPost, "/api/v1/admin/kill-switch", auth.ScopeAdminKillswitch, killSwitch.Set},
+
+		// Order intents (ADR-005 §5.3): agents and humans propose; only humans
+		// decide; approval also needs ORDER_EXECUTION_ENABLED.
+		{http.MethodGet, "/api/v1/order-intents", auth.ScopePortfolioRead, intents.List},
+		{http.MethodPost, "/api/v1/order-intents", auth.ScopeIntentCreate, intents.Create},
+		{http.MethodGet, "/api/v1/order-intents/:id", auth.ScopePortfolioRead, intents.Get},
+		{http.MethodPost, "/api/v1/order-intents/:id/approve", auth.ScopeIntentApprove, intents.Approve},
+		{http.MethodPost, "/api/v1/order-intents/:id/reject", auth.ScopeIntentApprove, intents.Reject},
+		{http.MethodPost, "/api/v1/order-intents/:id/cancel", auth.ScopeIntentCreate, intents.Cancel},
 
 		// Write (deprecated, human-only legacy scope; also gated by ORDER_EXECUTION_ENABLED).
 		{http.MethodPost, "/api/v1/orders/place", auth.ScopeOrdersPlaceLegacy, orders.PlaceOrder},

@@ -97,6 +97,15 @@ services:
       # native clients (no Origin header) still connect with a token.
       WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # M3 order intents (docs/runbooks/ORDER_INTENTS.md). Defaults are explicit:
+      # an empty RISK_SYMBOL_ALLOWLIST would refuse every symbol.
+      INTENT_TTL:                 ${INTENT_TTL:-5m}
+      RISK_SIGNAL_MAX_AGE:        ${RISK_SIGNAL_MAX_AGE:-5m}
+      RISK_MAX_ORDER_NOTIONAL:    ${RISK_MAX_ORDER_NOTIONAL:-1000}
+      RISK_SYMBOL_ALLOWLIST:      ${RISK_SYMBOL_ALLOWLIST:-SPY,QQQ,AAPL,MSFT}
+      RISK_STRATEGY_ALLOWLIST:    ${RISK_STRATEGY_ALLOWLIST:-rsi,ma_cross}
+      RISK_ALLOW_EXTENDED_HOURS:  ${RISK_ALLOW_EXTENDED_HOURS:-false}
+      INTENT_RATE_LIMIT_PER_HOUR: ${INTENT_RATE_LIMIT_PER_HOUR:-10}
     depends_on:
       signal-service:
         condition: service_healthy

@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/trading-bot/bot-engine/internal/domain/entities"
 )
 
 // Actor is who caused an action: an authenticated principal or the engine itself.
-type Actor struct {
-	ID   string // principal ID, or "system"
-	Type string // "human", "service", "agent" or "system"
-}
+// It is a domain type, so entities such as OrderIntent can record it.
+type Actor = entities.Actor
 
 // SystemActor is used for actions the engine takes on its own (startup, env override).
 var SystemActor = Actor{ID: "system", Type: "system"}

@@ -74,6 +74,11 @@ func NewPlaceOrderUseCase(
 	}
 }
 
+// exec is the shared submission path (also used by order intents).
+func (uc *PlaceOrderUseCase) exec() *orderExecutor {
+	return &orderExecutor{broker: uc.broker, orders: uc.orderRepo, audit: uc.audit}
+}
+
 // WithAudit sets the audit log.
 func (uc *PlaceOrderUseCase) WithAudit(a ports.AuditLogPort) *PlaceOrderUseCase {
 	uc.audit = a
@@ -133,7 +138,7 @@ func (uc *PlaceOrderUseCase) Execute(ctx context.Context, input PlaceOrderInput)
 	if uc.killSwitch != nil {
 		engaged, err := uc.killSwitch.Engaged(ctx)
 		if err != nil || engaged {
-			uc.record(ctx, log, "order.blocked", "", "kill_switch", request)
+			uc.exec().record(ctx, log, "order.blocked", "", "kill_switch", request)
 			if err != nil {
 				return nil, fmt.Errorf("%w: state unavailable, refusing: %w", ports.ErrKillSwitchEngaged, err)
 			}
@@ -156,7 +161,7 @@ func (uc *PlaceOrderUseCase) Execute(ctx context.Context, input PlaceOrderInput)
 	skip := func(reason string) (*PlaceOrderOutput, error) {
 		log.Info("place_order.skipped", zap.String("reason", reason))
 		inputs["reason"] = reason
-		uc.record(ctx, log, "order.skipped", "", "skipped", inputs)
+		uc.exec().record(ctx, log, "order.skipped", "", "skipped", inputs)
 		return &PlaceOrderOutput{Signal: signal, Skipped: true, SkipReason: reason}, nil
 	}
 
@@ -214,10 +219,10 @@ func (uc *PlaceOrderUseCase) Execute(ctx context.Context, input PlaceOrderInput)
 	inputs["side"] = string(side)
 	if err := uc.audit.Record(ctx, ports.AuditEvent{Action: "order.submit_requested", Target: order.ID.String(), Result: "requested", Payload: inputs}); err != nil {
 		log.Error("place_order.audit_failed", zap.Error(err))
-		uc.markRejected(ctx, order, log)
+		uc.exec().markRejected(ctx, order, log)
 		return nil, fmt.Errorf("%w: %w", ErrAuditUnavailable, err)
 	}
-	placed, err := uc.submit(ctx, order, log)
+	placed, err := uc.exec().submit(ctx, order, log)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +230,7 @@ func (uc *PlaceOrderUseCase) Execute(ctx context.Context, input PlaceOrderInput)
 	if updateErr := uc.orderRepo.Update(ctx, submitted); updateErr != nil {
 		log.Error("place_order.update_failed", zap.Error(updateErr))
 	}
-	uc.record(ctx, log, "order.submitted", submitted.ID.String(), string(submitted.Status), map[string]any{
+	uc.exec().record(ctx, log, "order.submitted", submitted.ID.String(), string(submitted.Status), map[string]any{
 		"broker_id": submitted.BrokerID, "status": string(submitted.Status),
 		"filled_qty": submitted.FilledQty.String(), "qty": qty.String(),
 	})
@@ -241,71 +246,6 @@ func (uc *PlaceOrderUseCase) Execute(ctx context.Context, input PlaceOrderInput)
 	)
 	span.SetAttributes(attribute.String("order_id", submitted.ID.String()))
 	return &PlaceOrderOutput{Order: submitted, Signal: signal, Skipped: false}, nil
-}
-
-// submit sends the order. When the outcome is unknown (broker unavailable or
-// timed out) it looks the order up by client ID instead of guessing:
-//   - found: the broker has it — adopt the broker's state;
-//   - not found: it was never placed — mark it rejected;
-//   - lookup failed: leave it pending and return an error (needs reconciliation).
-func (uc *PlaceOrderUseCase) submit(ctx context.Context, order *entities.Order, log *zap.Logger) (ports.BrokerOrder, error) {
-	target := order.ID.String()
-	placed, err := uc.broker.SubmitOrder(ctx, ports.SubmitRequestFor(order))
-	if err == nil {
-		return placed, nil
-	}
-	if !errors.Is(err, ports.ErrUnavailable) {
-		uc.markRejected(ctx, order, log)
-		uc.record(ctx, log, "order.rejected", target, "rejected", map[string]any{"error_class": errorClass(err)})
-		return ports.BrokerOrder{}, fmt.Errorf("broker rejected order: %w", err)
-	}
-
-	log.Warn("place_order.submit_outcome_unknown", zap.Error(err), zap.String("client_order_id", order.ClientOrderID()))
-	lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), lookupTimeout)
-	defer cancel()
-	found, lookupErr := uc.broker.GetOrderByClientID(lookupCtx, order.ClientOrderID())
-	switch {
-	case lookupErr == nil:
-		log.Info("place_order.submit_reconciled", zap.String("broker_id", found.ID))
-		return found, nil
-	case errors.Is(lookupErr, ports.ErrNotFound):
-		uc.markRejected(ctx, order, log)
-		uc.record(ctx, log, "order.rejected", target, "not_placed", map[string]any{"error_class": errorClass(err)})
-		return ports.BrokerOrder{}, fmt.Errorf("broker did not accept order: %w", err)
-	default:
-		uc.record(ctx, log, "order.outcome_unknown", target, "pending", map[string]any{"error_class": errorClass(err)})
-		return ports.BrokerOrder{}, fmt.Errorf("%w, left pending for reconciliation: %w", ErrOutcomeUnknown, err)
-	}
-}
-
-func (uc *PlaceOrderUseCase) markRejected(ctx context.Context, order *entities.Order, log *zap.Logger) {
-	if err := uc.orderRepo.Update(context.WithoutCancel(ctx), order.Transition(entities.OrderStatusRejected)); err != nil {
-		log.Error("place_order.update_failed", zap.Error(err))
-	}
-}
-
-// record writes a best-effort audit event; a failure is logged, not returned.
-func (uc *PlaceOrderUseCase) record(ctx context.Context, log *zap.Logger, action, target, result string, payload map[string]any) {
-	if err := uc.audit.Record(context.WithoutCancel(ctx), ports.AuditEvent{Action: action, Target: target, Result: result, Payload: payload}); err != nil {
-		log.Error("place_order.audit_failed", zap.String("action", action), zap.Error(err))
-	}
-}
-
-// errorClass names a typed broker error for the audit log without its text.
-func errorClass(err error) string {
-	for _, c := range []struct {
-		err  error
-		name string
-	}{
-		{ports.ErrInsufficientFunds, "insufficient_funds"}, {ports.ErrRejected, "rejected"},
-		{ports.ErrInvalidOrder, "invalid_order"}, {ports.ErrRateLimited, "rate_limited"},
-		{ports.ErrUnavailable, "unavailable"}, {ports.ErrNotFound, "not_found"},
-	} {
-		if errors.Is(err, c.err) {
-			return c.name
-		}
-	}
-	return "other"
 }
 
 type nopAudit struct{}

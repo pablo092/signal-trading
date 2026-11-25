@@ -11,12 +11,15 @@ Public routes: `/health/live`, `/health/ready`, `/metrics` (both), plus `/docs`,
 | Scope | Routes | Who may hold it |
 |---|---|---|
 | `market:read` | signal-service `POST /api/v1/signals/generate`, `GET /api/v1/signals/strategies` | agent, human, service |
-| `portfolio:read` | `GET /api/v1/trading-mode`, `/portfolio/equity`, `/portfolio/positions`, `GET /ws` | agent, human, service |
-| `orders:place-legacy` | `POST /api/v1/orders/place` (deprecated, removed in M3) | **human only** |
-| `intent:create` | M3 | agent, human |
-| `intent:approve`, `admin:killswitch` | M2/M3 | **human only** |
+| `portfolio:read` | `GET /api/v1/trading-mode`, `/portfolio/equity`, `/portfolio/positions`, `GET /ws`, `GET /api/v1/order-intents[/{id}]`, `GET /api/v1/admin/kill-switch` | agent, human, service |
+| `orders:place-legacy` | `POST /api/v1/orders/place` (deprecated since M3; removal in a later PR) | **human only** |
+| `intent:create` | `POST /api/v1/order-intents`, `POST /api/v1/order-intents/{id}/cancel` (own intents only) | agent, human |
+| `intent:approve` | `POST /api/v1/order-intents/{id}/approve` and `/reject` | **human only** |
+| `admin:killswitch` | `POST /api/v1/admin/kill-switch` | **human only** |
 
-Agent tokens holding a human-only scope make the engine refuse to start.
+Only `human` entries may hold a human-only scope: an `agent` or `service` entry with one makes the
+engine refuse to start, and such a token is also refused at request time. The MCP gateway token
+needs `market:read`, `portfolio:read` and `intent:create`; it can propose intents but never decide them.
 
 ## Issue a token
 

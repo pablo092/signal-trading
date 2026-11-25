@@ -1,0 +1,44 @@
+{
+  "intents": [
+    {
+      "id": "8e1d2c3b-4f5a-4b6c-9d7e-8f9a0b1c2d3e",
+      "status": "filled",
+      "symbol": "SPY",
+      "strategy": "ma_cross",
+      "side": "buy",
+      "qty": 0.833194,
+      "estimated_notional": 499.92,
+      "signal": {"id": "s-1", "direction": "BUY", "confidence": 0.71, "price": 600.0, "generated_at": "2026-11-25T14:00:00Z"},
+      "created_by": {"id": "owner", "type": "human"},
+      "created_at": "2026-11-25T14:00:02Z",
+      "updated_at": "2026-11-25T14:01:10Z",
+      "expires_at": "2026-11-25T14:05:02Z",
+      "decided_by": {"id": "owner", "type": "human"},
+      "decided_at": "2026-11-25T14:01:00Z",
+      "decision_reason": "looks fine",
+      "rejection_code": null,
+      "risk": {"passed": true, "stage": "submission", "evaluated_at": "2026-11-25T14:01:00Z", "checks": [{"name": "market_open", "passed": true, "detail": "market is open"}]},
+      "order": {"id": "8e1d2c3b-4f5a-4b6c-9d7e-8f9a0b1c2d3e", "broker_id": "61e69015-8549-4bfd-b9c3-01e75843f47d", "status": "filled", "filled_qty": 0.833194, "filled_price": 600.02, "filled_at": "2026-11-25T14:01:09Z"}
+    },
+    {
+      "id": "9f2e3d4c-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+      "status": "rejected",
+      "symbol": "TSLA",
+      "strategy": "rsi",
+      "side": null,
+      "qty": 0,
+      "estimated_notional": 0,
+      "signal": {"id": "s-2", "direction": "HOLD", "confidence": 0.4, "price": 250.0, "generated_at": "2026-11-25T13:59:00Z"},
+      "created_by": {"id": "mcp-gateway", "type": "agent"},
+      "created_at": "2026-11-25T13:59:01Z",
+      "updated_at": "2026-11-25T13:59:01Z",
+      "expires_at": "2026-11-25T14:04:01Z",
+      "decided_by": null,
+      "decided_at": null,
+      "decision_reason": null,
+      "rejection_code": "risk_failed",
+      "risk": {"passed": false, "stage": "creation", "evaluated_at": "2026-11-25T13:59:01Z", "checks": [{"name": "symbol_allowlist", "passed": false, "detail": "TSLA is not in the allowlist"}, {"name": "signal_actionable", "passed": false, "detail": "HOLD signal"}]},
+      "order": null
+    }
+  ]
+}

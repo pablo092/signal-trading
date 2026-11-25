@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 )
 
 // ErrOrderNotFound is returned by FindByID and Update for an unknown order.
-var ErrOrderNotFound = errors.New("order not found")
+var ErrOrderNotFound = ports.ErrOrderNotFound
 
 // OrderRepo is the Postgres ports.OrderRepositoryPort.
 type OrderRepo struct{ pool *pgxpool.Pool }

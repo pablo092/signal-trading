@@ -40,19 +40,24 @@ func TestEmptyStoreDeniesEverything(t *testing.T) {
 	}
 }
 
-func TestAgentCannotHoldHumanOnlyScopes(t *testing.T) {
-	for _, sc := range []string{ScopeIntentApprove, ScopeAdminKillswitch, ScopeOrdersPlaceLegacy} {
-		_, err := NewStore([]*Principal{entry("gw", ActorAgent, "t", sc)})
-		if err == nil {
-			t.Fatalf("agent token with %s must be rejected at load", sc)
+func TestOnlyHumansHoldHumanOnlyScopes(t *testing.T) {
+	for _, typ := range []string{ActorAgent, ActorService} {
+		for _, sc := range []string{ScopeIntentApprove, ScopeAdminKillswitch, ScopeOrdersPlaceLegacy} {
+			_, err := NewStore([]*Principal{entry("gw", typ, "t", sc)})
+			if err == nil {
+				t.Fatalf("%s token with %s must be rejected at load", typ, sc)
+			}
+		}
+		// Defense in depth at verification time, even if an entry bypassed NewStore.
+		p := entry("gw", typ, "t", ScopeIntentApprove)
+		p.digest = mustDigest(t, p.SHA256)
+		s := &Store{principals: []*Principal{p}}
+		if s.Authenticate("t") != nil {
+			t.Fatalf("%s token with a human-only scope must not authenticate", typ)
 		}
 	}
-	// Defense in depth at verification time, even if an entry bypassed NewStore.
-	p := entry("gw", ActorAgent, "t", ScopeAdminKillswitch)
-	p.digest = mustDigest(t, p.SHA256)
-	s := &Store{principals: []*Principal{p}}
-	if s.Authenticate("t") != nil {
-		t.Fatal("agent token with human-only scope must not authenticate")
+	if _, err := NewStore([]*Principal{entry("me", ActorHuman, "t", ScopeIntentApprove)}); err != nil {
+		t.Fatalf("a human may approve: %v", err)
 	}
 }
 

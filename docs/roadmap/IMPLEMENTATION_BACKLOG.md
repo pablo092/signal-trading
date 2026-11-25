@@ -42,13 +42,13 @@ Exit criteria:
 
 | ID | Item | Fixes | Effort | Depends on |
 |---|---|---|---|---|
-| BL-21 | Order-intent API, state machine, `Idempotency-Key`, mandatory human approval, TTL expiry; deprecate `/orders/place` | TD-03, ADR-005 §5.3–5.4 | L | BL-14, BL-18, BL-19 |
-| BL-21a | Order path gaps found by BL-09: enforce `MaxOpenPositions` (validated but never checked). The daily-loss check is real and fails closed since BL-18 (account equity vs previous close) | TD-23 | S | BL-21 |
-| BL-22 | Fail-closed risk engine with full checklist (ADR-005 §5.5), evaluated at creation and before submission | TD-04 | M | BL-21 |
-| BL-23 | Fill reconciler via Alpaca trade updates (adds `StreamTradeUpdates` to the port); publish `OrderFilled`; reconcile orders left `pending` after an unknown submit outcome | TD-06 | M | BL-18 |
-| BL-24 | Deployment manifests: engine `replicas: 1` / `Recreate` / no HPA, secrets out of ConfigMaps, real images, NetworkPolicy | TD-17 | M | — |
-| BL-25 | Flutter: real portfolio/orders read paths; "Propose trade" via intents; approval screen (human scope) | TD-18 | M | BL-21 |
-| BL-26 | MCP tool `create_order_intent` (agent scope `intent:create` only) | ADR-002, ADR-005 | S | BL-21, BL-22 |
+| BL-21 ✅ | Order-intent API, state machine, `Idempotency-Key`, mandatory human approval, TTL expiry; deprecate `/orders/place` | TD-03, ADR-005 §5.3–5.4 | L | BL-14, BL-18, BL-19 |
+| BL-21a ✅ | Order path gaps found by BL-09: enforce `MaxOpenPositions` (validated but never checked). The daily-loss check is real and fails closed since BL-18 (account equity vs previous close) | TD-23 | S | BL-21 |
+| BL-22 ✅ | Fail-closed risk engine with full checklist (ADR-005 §5.5), evaluated at creation and before submission | TD-04 | M | BL-21 |
+| BL-23 ✅ | Fill reconciler via Alpaca trade updates (adds `StreamTradeUpdates` to the port); publish `OrderFilled`; reconcile orders left `pending` after an unknown submit outcome | TD-06 | M | BL-18 |
+| BL-24 ✅ | Deployment manifests: engine `replicas: 1` / `Recreate` / no HPA, secrets out of ConfigMaps, real images, NetworkPolicy | TD-17 | M | — |
+| BL-25 ✅ | Flutter: real portfolio/orders read paths; "Propose trade" via intents; approval screen (human scope) | TD-18 | M | BL-21 |
+| BL-26 ✅ | MCP tools `create_order_intent`, `get_order_intent`, `list_order_intents` (agent scope `intent:create` only; no approve/reject/cancel tools) | ADR-002, ADR-005 | S | BL-21, BL-22 |
 
 ## Later / requires new ADR
 

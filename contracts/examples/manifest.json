@@ -6,5 +6,8 @@
   "kill-switch.json": "kill-switch.schema.json",
   "error.json": "error.schema.json",
   "portfolio-equity.json": "portfolio-equity.schema.json",
-  "portfolio-positions.json": "portfolio-positions.schema.json"
+  "portfolio-positions.json": "portfolio-positions.schema.json",
+  "order-intent.json": "order-intent.schema.json",
+  "order-intent-list.json": "order-intent-list.schema.json",
+  "ws-intent-updated.json": "ws-event.schema.json"
 }

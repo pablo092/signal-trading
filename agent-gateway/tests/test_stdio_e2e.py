@@ -77,7 +77,8 @@ async def test_stdio_session_end_to_end(fake_backend: str, tmp_path: Any) -> Non
     )
     async with Client(params) as client:
         tools = {t.name for t in (await client.list_tools()).tools}
-        assert tools == {"list_strategies", "generate_signal", "get_portfolio_summary", "get_positions", "get_trading_mode"}
+        assert tools == {"list_strategies", "generate_signal", "get_portfolio_summary", "get_positions", "get_trading_mode",
+                         "create_order_intent", "get_order_intent", "list_order_intents"}
         mode = await client.call_tool("get_trading_mode", {})
         assert not mode.is_error
         assert mode.structured_content is not None and mode.structured_content["mode"] == "paper"

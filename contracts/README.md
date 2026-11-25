@@ -8,17 +8,18 @@ a test on both sides.
 |---|---|---|---|
 | `signal.schema.json` | `POST /api/v1/signals/generate` response | signal-service | bot-engine, agent-gateway, app |
 | `order.schema.json` | an order in `/api/v1/orders*` and in `order.placed` events | bot-engine | agent-gateway, app |
+| `order-intent.schema.json`, `order-intent-list.schema.json` | `/api/v1/order-intents*` responses and `intent.updated` events | bot-engine | agent-gateway, app |
 | `kill-switch.schema.json` | `/api/v1/admin/kill-switch` response | bot-engine | operators, app |
 | `portfolio-equity.schema.json`, `portfolio-positions.schema.json` | `/api/v1/portfolio/*` responses | bot-engine | agent-gateway, app |
 | `error.schema.json` | the error envelope of both services | both | all |
-| `ws-event.schema.json` | `/ws` messages: envelope `{v, type, id, ts, data}` | bot-engine | app |
+| `ws-event.schema.json` | `/ws` messages: envelope `{v, type, id, ts, data}`; types include `order.placed`, `order.filled`, `intent.updated` | bot-engine | app |
 
 `examples/` holds one valid document per schema; `examples/manifest.json` maps each example
 to its schema. Tests validate the examples and the real responses.
 
 | Where | Test |
 |---|---|
-| bot-engine | `internal/contracttest` (examples and known-bad documents), `http/server/contract_test.go` (live responses), `messaging/contract_test.go` (WS events), `signalclient` (decodes the signal example) |
+| bot-engine | `internal/contracttest` (examples and known-bad documents), `http/server/contract_test.go` and `intents_integration_test.go` (live responses), `messaging/*contract_test.go` (WS events), `signalclient` (decodes the signal example) |
 | signal-service | `tests/test_contracts.py` |
 | agent-gateway | `tests/test_contracts.py` (reference `jsonschema` validator) |
 | app | `test/contract_test.dart` (decodes the examples) |

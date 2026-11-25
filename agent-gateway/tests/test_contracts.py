@@ -70,6 +70,30 @@ def test_schemas_reject_bad_payloads(schema: str, bad: dict[str, object]) -> Non
     assert not validator(schema).is_valid({**base, **bad})
 
 
+def test_gateway_intent_shape_matches_the_contract() -> None:
+    """BL-26: the gateway keeps every intent field and validates status against the enum."""
+    from typing import get_args
+
+    from agent_gateway.server import INTENT_FIELDS, IntentStatus
+
+    schema = SCHEMAS["order-intent.schema.json"]
+    assert set(INTENT_FIELDS) == set(schema["properties"]) == set(schema["required"])
+    assert set(get_args(IntentStatus)) == set(schema["properties"]["status"]["enum"])
+
+
+def test_gateway_shaped_intents_still_conform() -> None:
+    from agent_gateway.server import _shape_intent
+
+    intent = json.loads((CONTRACTS / "examples" / "order-intent.json").read_text(encoding="utf-8"))
+    shaped = _shape_intent({**intent, "unexpected": "dropped"})
+    assert shaped == intent
+    validator("order-intent.schema.json").validate(shaped)
+    listing = json.loads((CONTRACTS / "examples" / "order-intent-list.json").read_text(encoding="utf-8"))
+    validator("order-intent-list.schema.json").validate(
+        {"intents": [_shape_intent(i) for i in listing["intents"]]}
+    )
+
+
 def test_ws_event_type_must_match_data() -> None:
     event = json.loads(
         (CONTRACTS / "examples" / "ws-order-placed.json").read_text(encoding="utf-8")

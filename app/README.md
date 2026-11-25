@@ -31,3 +31,21 @@ samples, guidance on mobile development, and a full API reference.
 Limitations today: signal-service and bot-engine require a service token (ADR-003),
 and a browser app cannot hold one safely, so live data needs the user-auth work
 planned in BL-15. The deployed app renders its UI; data calls fail until then.
+
+## Portfolio, order intents and approvals (local only, BL-25)
+
+These features call bot-engine directly with a bearer token, so they are enabled only in
+local builds. A public web build must never hold a token: without one the Portfolio,
+Orders and Approvals tabs show a "connect a token (local only)" state and the app never
+calls bot-engine (the web demo keeps its read-only `/api/v1/portfolio/summary` proxy and
+the signal flow is unchanged).
+
+```sh
+flutter run -d chrome   --dart-define=BOT_ENGINE_URL=http://localhost:8080   --dart-define=BOT_ENGINE_TOKEN=<token>   --dart-define=BOT_ENGINE_WS_TOKEN=<token>
+```
+
+- "Propose trade" creates an order intent (`POST /api/v1/order-intents`, scope
+  `intent:create`, with an `Idempotency-Key`); the result shows its status and risk checks.
+- The Approvals tab lists `pending_approval` intents. Approve / Reject need a **human**
+  token with `intent:approve`; approval also needs `ORDER_EXECUTION_ENABLED=true` on the
+  engine. See [ORDER_INTENTS.md](../docs/runbooks/ORDER_INTENTS.md).

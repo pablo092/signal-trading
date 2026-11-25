@@ -26,7 +26,7 @@ type BrokerCapabilities struct {
 	FractionalShares bool
 	ShortSelling     bool
 	LimitOrders      bool
-	TradeStreaming   bool // StreamTradeUpdates is not part of the port yet (BL-23)
+	TradeStreaming   bool // StreamTradeUpdates delivers live updates (BL-23)
 }
 
 // SubmitOrderRequest is a new order for the broker.
@@ -134,6 +134,11 @@ type BrokerPort interface {
 	GetPositions(ctx context.Context) ([]entities.Position, error)
 	// GetClock returns the market clock.
 	GetClock(ctx context.Context) (MarketClock, error)
+
+	// StreamTradeUpdates calls handler for each trade update until ctx is done
+	// or the stream fails. It blocks; callers reconnect (BL-23). Updates may be
+	// missed while disconnected, so callers also poll open orders.
+	StreamTradeUpdates(ctx context.Context, handler func(TradeUpdate)) error
 }
 
 // Validate checks a SubmitOrderRequest locally; errors wrap ErrInvalidOrder.

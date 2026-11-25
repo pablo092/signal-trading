@@ -6,6 +6,7 @@ import io
 import json
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -33,12 +34,20 @@ SIGNAL_BODY = {
     "generated_at": "2026-11-24T15:00:00Z",
 }
 
+CONTRACT_EXAMPLES = Path(__file__).resolve().parents[2] / "contracts" / "examples"
+# Canonical bodies from contracts/ (BL-16): the fake engine answers with exactly these.
+INTENT_EXAMPLE: dict[str, Any] = json.loads((CONTRACT_EXAMPLES / "order-intent.json").read_text(encoding="utf-8"))
+INTENT_LIST_EXAMPLE: dict[str, Any] = json.loads(
+    (CONTRACT_EXAMPLES / "order-intent-list.json").read_text(encoding="utf-8")
+)
+
 
 @dataclass
 class FakeServices:
     """Routes keyed by (host, method, path) → (status, json body)."""
 
     routes: dict[tuple[str, str, str], tuple[int, Any]] = field(default_factory=dict)
+    headers: dict[tuple[str, str, str], dict[str, str]] = field(default_factory=dict)
     requests: list[httpx.Request] = field(default_factory=list)
     raise_exc: Exception | None = None
 
@@ -59,6 +68,9 @@ class FakeServices:
                     200, {"mode": "paper", "verified": True, "broker_host": "paper-api.alpaca.markets",
                           "order_execution_enabled": False},
                 ),
+                ("127.0.0.1:8080", "POST", "/api/v1/order-intents"): (201, INTENT_EXAMPLE),
+                ("127.0.0.1:8080", "GET", "/api/v1/order-intents"): (200, INTENT_LIST_EXAMPLE),
+                ("127.0.0.1:8080", "GET", f"/api/v1/order-intents/{INTENT_EXAMPLE['id']}"): (200, INTENT_EXAMPLE),
             }
         )
 
@@ -68,10 +80,14 @@ class FakeServices:
             raise self.raise_exc
         key = (request.url.netloc.decode(), request.method, request.url.path)
         status, body = self.routes.get(key, (404, {"detail": "Not Found"}))
-        return httpx.Response(status, json=body)
+        return httpx.Response(status, json=body, headers=self.headers.get(key))
 
-    def set(self, host: str, method: str, path: str, status: int, body: Any) -> None:
+    def set(
+        self, host: str, method: str, path: str, status: int, body: Any, headers: dict[str, str] | None = None
+    ) -> None:
         self.routes[(host, method, path)] = (status, body)
+        if headers is not None:
+            self.headers[(host, method, path)] = headers
 
 
 @pytest.fixture

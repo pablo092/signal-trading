@@ -15,6 +15,7 @@ class SignalRemoteDataSource {
 
   WebSocketChannel? _channel;
   final _streamController = StreamController<SignalEntity>.broadcast();
+  final _eventController = StreamController<WsEvent>.broadcast();
 
   SignalRemoteDataSource({
     required http.Client httpClient,
@@ -47,8 +48,19 @@ class SignalRemoteDataSource {
 
   /// WebSocket stream from bot-engine /ws
   Stream<SignalEntity> watchSignals() {
-    _connect();
+    _ensureConnected();
     return _streamController.stream;
+  }
+
+  /// Every v1 event on /ws (intent.updated, order.filled, ...). Shares the
+  /// connection with [watchSignals]; unknown types are left to the listener.
+  Stream<WsEvent> watchEvents() {
+    _ensureConnected();
+    return _eventController.stream;
+  }
+
+  void _ensureConnected() {
+    if (_channel == null) _connect();
   }
 
   void _connect() {
@@ -63,8 +75,11 @@ class SignalRemoteDataSource {
     _channel!.stream.listen(
       (data) {
         if (data is! String) return;
+        final event = WsEvent.tryParse(data);
+        if (event == null) return; // not a v1 envelope: ignore
+        if (!_eventController.isClosed) _eventController.add(event);
         try {
-          final signal = WsEvent.tryParse(data)?.signal;
+          final signal = event.signal;
           if (signal != null) _streamController.add(signal);
         } catch (_) {} // malformed signal data: skip the message
       },
@@ -82,6 +97,7 @@ class SignalRemoteDataSource {
   void dispose() {
     _channel?.sink.close();
     _streamController.close();
+    _eventController.close();
   }
 }
 
