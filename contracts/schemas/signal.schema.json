@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "signal.schema.json",
+  "title": "Signal",
+  "description": "A generated trading signal: signal-service POST /api/v1/signals/generate response, and the data of a signal.received event.",
+  "type": "object",
+  "required": ["id", "symbol", "direction", "strength", "price", "confidence", "reason", "strategy_name", "is_actionable", "generated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "symbol": {"type": "string", "pattern": "^[A-Z][A-Z0-9.]{0,9}$"},
+    "direction": {"enum": ["BUY", "SELL", "HOLD"]},
+    "strength": {"enum": ["STRONG", "MODERATE", "WEAK"]},
+    "price": {"type": "number", "exclusiveMinimum": 0},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "reason": {"type": "string"},
+    "strategy_name": {"type": "string", "minLength": 1},
+    "is_actionable": {"type": "boolean"},
+    "generated_at": {"type": "string", "format": "date-time"}
+  }
+}

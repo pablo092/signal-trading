@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"github.com/trading-bot/bot-engine/internal/domain/ports"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/http/apierror"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/reqid"
 )
@@ -183,12 +184,35 @@ func BearerToken(r *http.Request) string {
 	return ""
 }
 
+// RequestToken returns the caller's token: the Authorization bearer token or,
+// for a WebSocket upgrade only, the second entry of
+// "Sec-WebSocket-Protocol: bearer, <token>" (browsers cannot set headers on a
+// WebSocket). Tokens in the query string are never accepted: they leak into logs.
+func RequestToken(r *http.Request) string {
+	if t := BearerToken(r); t != "" {
+		return t
+	}
+	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		return ""
+	}
+	var protocols []string
+	for _, v := range r.Header.Values("Sec-WebSocket-Protocol") {
+		for _, p := range strings.Split(v, ",") {
+			protocols = append(protocols, strings.TrimSpace(p))
+		}
+	}
+	if len(protocols) == 2 && strings.EqualFold(protocols[0], "bearer") {
+		return protocols[1]
+	}
+	return ""
+}
+
 // Require returns middleware that authenticates the caller and requires scope.
 // 401 when the token is missing or unknown, 403 when the scope is missing.
 // Every decision is logged as an audit line (never the token itself).
 func Require(store *Store, scope string, logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		p := store.Authenticate(BearerToken(c.Request))
+		p := store.Authenticate(RequestToken(c.Request))
 		if p == nil {
 			audit(logger, c, nil, scope, "unauthenticated")
 			apierror.Abort(c, http.StatusUnauthorized, apierror.CodeUnauthorized, "missing or invalid bearer token")
@@ -204,6 +228,9 @@ func Require(store *Store, scope string, logger *zap.Logger) gin.HandlerFunc {
 			return
 		}
 		c.Set(principalKey, p)
+		// The actor travels in the request context so audit events (BL-14) can
+		// name who caused them without depending on gin.
+		c.Request = c.Request.WithContext(ports.WithActor(c.Request.Context(), ports.Actor{ID: p.ID, Type: p.Type}))
 		c.Next()
 		audit(logger, c, p, scope, "allowed")
 	}

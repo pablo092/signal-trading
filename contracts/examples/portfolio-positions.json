@@ -1,0 +1,4 @@
+[
+  {"symbol": "AAPL", "quantity": 2, "average_entry_price": 180.1, "current_price": 189.42, "unrealized_pnl": 18.64},
+  {"symbol": "TSLA", "quantity": -3, "average_entry_price": 250, "current_price": 240.5, "unrealized_pnl": 28.5}
+]

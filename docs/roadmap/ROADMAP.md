@@ -6,7 +6,7 @@ The milestones are sequential: each one's exit criteria gate the next. Backlog i
 |---|---|---|---|---|
 | **M0** | Technical audit and architecture foundation | none | This document set | **Complete, pending owner review** |
 | **M1** | Safe read-only foundation; agents can query and analyze the market | **None reachable** (order route disabled, auth on) | BL-01…BL-13 | Planned |
-| **M2** | Persistence, observability, safety primitives (kill switch, BrokerPort v2) | Unchanged (disabled) | BL-07, BL-09, BL-14…BL-20 | Planned |
+| **M2** | Persistence, observability, safety primitives (kill switch, BrokerPort v2) | Unchanged (disabled) | BL-07, BL-09, BL-14…BL-20 | **Implemented**, pending review (Dart contract tests and `-race` run in CI only) |
 | **M3** | Order intents with mandatory human approval, paper only | Paper, human-approved | BL-21…BL-26 | Planned |
 | Later | Async flows, Timescale, remote MCP transport, live trading | Each requires its own ADR | BL-27…BL-30 | Not planned |
 

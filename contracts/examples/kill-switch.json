@@ -1,0 +1,9 @@
+{
+  "engaged": true,
+  "forced": false,
+  "reason": "runaway strategy",
+  "updated_by": "oncall",
+  "updated_at": "2026-11-25T15:00:00Z",
+  "persisted": true,
+  "cancel_all": "ok"
+}

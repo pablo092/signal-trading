@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "portfolio-equity.schema.json",
+  "title": "PortfolioEquity",
+  "description": "bot-engine GET /api/v1/portfolio/equity response.",
+  "type": "object",
+  "required": ["equity", "paper_mode", "market_open"],
+  "additionalProperties": false,
+  "properties": {
+    "equity": {"type": "number"},
+    "paper_mode": {"type": "boolean"},
+    "market_open": {"type": "boolean"}
+  }
+}

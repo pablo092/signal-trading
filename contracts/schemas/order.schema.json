@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "order.schema.json",
+  "title": "Order",
+  "description": "An order as clients see it: the data of an order.placed event. Amounts are JSON numbers printed from decimals.",
+  "type": "object",
+  "required": ["id", "symbol", "side", "type", "status", "quantity", "filled_qty", "filled_price", "limit_price", "broker_id", "strategy_id", "signal_id", "created_at", "updated_at", "filled_at"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "symbol": {"type": "string", "minLength": 1},
+    "side": {"enum": ["buy", "sell"]},
+    "type": {"enum": ["market", "limit"]},
+    "status": {"enum": ["pending", "submitted", "partially_filled", "filled", "canceled", "rejected", "expired"]},
+    "quantity": {"type": "number", "exclusiveMinimum": 0},
+    "filled_qty": {"type": "number", "minimum": 0},
+    "filled_price": {"type": ["number", "null"]},
+    "limit_price": {"type": ["number", "null"]},
+    "broker_id": {"type": "string"},
+    "strategy_id": {"type": "string"},
+    "signal_id": {"type": "string"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "filled_at": {"type": ["string", "null"], "format": "date-time"}
+  }
+}

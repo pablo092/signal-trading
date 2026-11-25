@@ -45,6 +45,7 @@ type Deps struct {
 	Config     *config.Config
 	Tokens     *auth.Store
 	PlaceOrder *usecases.PlaceOrderUseCase
+	KillSwitch *usecases.KillSwitchService
 	Broker     ports.BrokerPort
 	Hub        WSServer
 	Registry   *prometheus.Registry
@@ -58,6 +59,7 @@ func Routes(d Deps) []Route {
 
 	orders := httphandlers.NewOrdersHandler(d.PlaceOrder, d.Config.OrderExecutionEnabled, d.Logger)
 	portfolio := httphandlers.NewPortfolioHandler(d.Broker, paper, d.Logger)
+	killSwitch := httphandlers.NewKillSwitchHandler(d.KillSwitch, d.Logger)
 	tradingMode := httphandlers.NewTradingModeHandler(httphandlers.TradingModeInfo{
 		Mode:                  mode,
 		Verified:              verified,
@@ -87,6 +89,11 @@ func Routes(d Deps) []Route {
 			}
 			d.Hub.ServeWS(c.Writer, c.Request, actor+"-"+uuid.NewString())
 		}},
+
+		// Kill switch (ADR-005 §5.7): anyone who can read the portfolio may see it;
+		// only a human admin:killswitch token may change it.
+		{http.MethodGet, "/api/v1/admin/kill-switch", auth.ScopePortfolioRead, killSwitch.Get},
+		{http.MethodPost, "/api/v1/admin/kill-switch", auth.ScopeAdminKillswitch, killSwitch.Set},
 
 		// Write (deprecated, human-only legacy scope; also gated by ORDER_EXECUTION_ENABLED).
 		{http.MethodPost, "/api/v1/orders/place", auth.ScopeOrdersPlaceLegacy, orders.PlaceOrder},

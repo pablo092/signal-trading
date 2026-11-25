@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     auth_tokens: str = Field("", alias="AUTH_TOKENS", repr=False)
     auth_tokens_file: str = Field("", alias="AUTH_TOKENS_FILE")
 
-    # Observability
-    jaeger_endpoint: str = Field("", alias="JAEGER_ENDPOINT")
+    # Observability. Tracing is configured by the standard OTEL_EXPORTER_OTLP_*
+    # variables (see src.infrastructure.observability), not by a setting here.
     metrics_enabled: bool = Field(True, alias="METRICS_ENABLED")
 
     # Storage

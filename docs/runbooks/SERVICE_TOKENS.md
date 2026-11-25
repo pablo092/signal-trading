@@ -71,7 +71,16 @@ In M1 it stays `false`; the route answers `403 execution_disabled`.
 Every protected request logs one `audit.request` line with `actor_id`, `actor_type`, `route`, `scope`,
 `outcome` (`unauthenticated|forbidden|allowed`), `status`, and `request_id`. Tokens are never logged.
 
-## Known limitation
+Order and kill-switch decisions are also recorded as audit events (BL-14) with the same `actor_id`:
+in the append-only `audit_events` table when `DATABASE_URL` is set, otherwise as `audit.event` log lines.
 
-Browsers cannot set `Authorization` on a WebSocket upgrade, so the Flutter web app's `/ws` feed returns
-401 until BL-15 (authenticated upgrade and origin allowlist) lands.
+## WebSocket (`/ws`, BL-15)
+
+`/ws` needs `portfolio:read`. Native clients send `Authorization: Bearer <token>`. Browsers cannot set
+that header on an upgrade, so the token may instead be sent as the subprotocol pair
+`Sec-WebSocket-Protocol: bearer, <token>`; the server echoes only `bearer`. A token in the query string
+is never accepted (it would end up in proxy logs). Browser origins must be listed in
+`WS_ALLOWED_ORIGINS` (comma-separated; empty = none).
+
+The public web demo still has the feed disabled: a browser must not hold a long-lived token (ADR-003),
+so enabling it needs a short-lived ticket issued server-side (not built yet).

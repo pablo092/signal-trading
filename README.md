@@ -13,6 +13,7 @@ signal-trading/
 ├── agent-gateway/    # Python, MCP over STDIO — read-only tools for AI agents
 ├── app/              # Flutter — dashboard (web build deployed to Vercel)
 ├── api/              # Vercel functions — server-side proxy for the web demo
+├── contracts/        # JSON Schemas shared by every service's contract tests
 └── docs/             # audit, ADRs, roadmap, runbooks
 ```
 
@@ -85,12 +86,19 @@ GitHub Actions is currently unavailable (billing), so run them locally before a 
 - **Backends on Fly.io** and the **web demo on Vercel**: [docs/runbooks/FLY_DEPLOY.md](docs/runbooks/FLY_DEPLOY.md).
 - **AI agents** (Claude Code, Codex CLI) connect through [agent-gateway](agent-gateway/README.md).
 - Tokens: [docs/runbooks/SERVICE_TOKENS.md](docs/runbooks/SERVICE_TOKENS.md).
+- Kill switch: [docs/runbooks/KILL_SWITCH.md](docs/runbooks/KILL_SWITCH.md). Errors, traces and
+  metrics: [docs/runbooks/ERRORS_AND_TRACING.md](docs/runbooks/ERRORS_AND_TRACING.md).
+- Postgres is optional: with `DATABASE_URL` bot-engine persists orders, the kill switch and an
+  append-only audit trail, applying its migrations on start; without it, they stay in memory.
 
 ## Safety
 
 - Paper only: bot-engine refuses to start unless `PAPER_TRADING=true` and the broker host is
   exactly `paper-api.alpaca.markets`.
 - `ORDER_EXECUTION_ENABLED=false` by default; agents can never hold an order scope.
+- Kill switch: a human-only endpoint (or `KILL_SWITCH=true`) blocks every order and cancels open
+  ones. It fails closed: an unreadable state counts as engaged. No order is sent unless its
+  audit record was written first.
 - Signals are algorithmic indicators, not financial advice.
 
 Risk rules applied by bot-engine to any order:

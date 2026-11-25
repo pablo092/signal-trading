@@ -13,6 +13,10 @@ class AppConfig {
     defaultValue: 'ws://localhost:8080/ws',
   );
 
+  /// Token for the /ws upgrade (portfolio:read). Local development only: a
+  /// value set here is visible in the bundle, so never set it on Vercel.
+  static const String wsToken = String.fromEnvironment('BOT_ENGINE_WS_TOKEN');
+
   /// 'same-origin' = the hosting site (Vercel demo proxy under /api).
   static String get apiBaseUrl =>
       _apiUrl == 'same-origin' ? Uri.base.origin : _apiUrl;

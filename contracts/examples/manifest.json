@@ -1,0 +1,10 @@
+{
+  "signal.json": "signal.schema.json",
+  "ws-signal-received.json": "ws-event.schema.json",
+  "ws-order-placed.json": "ws-event.schema.json",
+  "ws-kill-switch-changed.json": "ws-event.schema.json",
+  "kill-switch.json": "kill-switch.schema.json",
+  "error.json": "error.schema.json",
+  "portfolio-equity.json": "portfolio-equity.schema.json",
+  "portfolio-positions.json": "portfolio-positions.schema.json"
+}
