@@ -11,7 +11,7 @@ Exit criteria:
 
 | ID | Item | Fixes | Effort | Depends on | Acceptance |
 |---|---|---|---|---|---|
-| BL-01 | Restore a working quality gate: resolve the GitHub billing lock **or** add `make ci`; fix `services/signal-service` paths; disable deploy jobs | TD-09 | S | — | A PR touching `signal-service/` triggers its workflow; lint and tests run |
+| BL-01 ✅ | Restore a working quality gate: resolve the GitHub billing lock **or** add `make ci`; fix `services/signal-service` paths; disable deploy jobs | TD-09 | S | — | A PR touching `signal-service/` triggers its workflow; lint and tests run |
 | BL-02 ✅ | Fix Python packaging: `pyproject.toml` as single source, valid build backend, add `pydantic-settings`, drop `pandas-ta`, runtime-only image, lock file | TD-08 | S | — | `pip install -e ".[dev]"` succeeds on 3.11; image has no pytest/ruff/mypy |
 | BL-03 ✅ | Reconcile the 11 out-of-sync strategy tests (fix tests or implement the missing features deliberately) | TD-07 | S | BL-02 | `pytest` green |
 | BL-04 ✅ (93 %) | Route and adapter tests for signal-service with a fake `IMarketDataRepository` | TD-23 | S | BL-03 | Coverage ≥ 80 % on `src/` |
@@ -22,7 +22,7 @@ Exit criteria:
 | BL-11 ✅ | Align docs: README to current architecture; delete `signal-service/docker-compose.yml`; un-ignore and update `.env.example`; fix Makefile Fly app names | TD-10, TD-15 | S | — | README quick start works from a fresh clone |
 | BL-13 ✅ | Compose hardening: no password fallbacks, pinned images, drop `--web.enable-lifecycle`, Redis password, unused infra moved to `profiles: [full]` | TD-16 | S | BL-11 | `docker compose up` starts only the needed services by default |
 | BL-12 ✅ | Dependency scanning: `pip-audit`, `govulncheck`, Dart `pub outdated`/OSV in CI | SEC-13 | S | BL-01 | Scan job runs; findings triaged |
-| BL-12a | Upgrade bot-engine to Go 1.26 and `golang.org/x/net` v0.60 / `x/text` v0.39 (9 reachable govulncheck findings, see docs/security/DEPENDENCY_SCAN.md) | SEC-13 | S | BL-12 | `make audit-go` clean |
+| BL-12a ✅ | Upgrade bot-engine to Go 1.26 and `golang.org/x/net` v0.60 / `x/text` v0.39 (9 reachable govulncheck findings, see docs/security/DEPENDENCY_SCAN.md) | SEC-13 | S | BL-12 | `make audit-go` clean |
 
 ## M2: Persistence, observability, and safety primitives
 
