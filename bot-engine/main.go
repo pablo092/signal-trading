@@ -67,6 +67,9 @@ func main() {
 	// In-memory order repo (swap for PostgreSQL repo in production)
 	orderRepo    := repository.NewInMemoryOrderRepo()
 	riskRules    := entities.DefaultRiskRules()
+	if err := riskRules.Validate(); err != nil {
+		logger.Fatal("risk_rules.invalid", zap.Error(err))
+	}
 	placeOrderUC := usecases.NewPlaceOrderUseCase(
 		alpacaBroker, orderRepo, signalSvc, bus, riskRules, logger,
 	)
