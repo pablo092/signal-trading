@@ -93,7 +93,7 @@ func (uc *PlaceOrderUseCase) Execute(ctx context.Context, input PlaceOrderInput)
 	// ── Step 1: Fetch signal ────────────────────────────────
 	signal, err := uc.signals.GetSignal(ctx, input.Symbol, input.Strategy)
 	if err != nil {
-		return nil, fmt.Errorf("fetching signal: %w", err)
+		return nil, fmt.Errorf("fetching signal: %w: %w", ErrSignalUnavailable, err)
 	}
 
 	log.Info("place_order.signal_received",
@@ -183,6 +183,16 @@ func (uc *PlaceOrderUseCase) Execute(ctx context.Context, input PlaceOrderInput)
 	return &PlaceOrderOutput{Order: submitted, Signal: signal, Skipped: false}, nil
 }
 
+// Errors the use case adds on top of the typed broker errors (ports.Err*), so
+// the HTTP layer can choose a status without parsing messages.
+var (
+	// ErrSignalUnavailable: the signal service could not provide a signal.
+	ErrSignalUnavailable = errors.New("signal unavailable")
+	// ErrOutcomeUnknown: the broker may or may not have the order; it is left
+	// pending until reconciled (BL-23). Never resubmit on this error.
+	ErrOutcomeUnknown = errors.New("order outcome unknown")
+)
+
 // minOrderQty is the smallest quantity worth submitting.
 var minOrderQty = decimal.RequireFromString("0.001")
 
@@ -216,7 +226,7 @@ func (uc *PlaceOrderUseCase) submit(ctx context.Context, order *entities.Order, 
 		uc.markRejected(ctx, order, log)
 		return ports.BrokerOrder{}, fmt.Errorf("broker did not accept order: %w", err)
 	default:
-		return ports.BrokerOrder{}, fmt.Errorf("order outcome unknown, left pending for reconciliation: %w", err)
+		return ports.BrokerOrder{}, fmt.Errorf("%w, left pending for reconciliation: %w", ErrOutcomeUnknown, err)
 	}
 }
 

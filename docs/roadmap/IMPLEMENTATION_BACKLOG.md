@@ -29,7 +29,7 @@ Exit criteria:
 | ID | Item | Fixes | Effort | Depends on |
 |---|---|---|---|---|
 | BL-14 | Postgres order repository with migrations (e.g. `golang-migrate`) and append-only `audit_events` | TD-05 | L | BL-13 |
-| BL-07 | Order-path handler and use-case integration tests on the fake broker (`fakebroker`, delivered in BL-18) | TD-23, ADR-004 | M | BL-18 |
+| BL-07 ✅ | Order-path handler and use-case integration tests on the fake broker (`fakebroker`, delivered in BL-18) | TD-23, ADR-004 | M | BL-18 |
 | BL-09 ✅ | Risk-rules unit tests (sizing, SL/TP prices, `Validate`) before the refactor | TD-23 | S | — |
 | BL-15 | WebSocket hub: single-writer pump, server-side client IDs, authenticated upgrade, origin allowlist, `-race` tests | TD-11, SEC-06 | M | BL-06 |
 | BL-16 | `contracts/` (OpenAPI and WS event JSON Schema) plus contract tests in Go, Python, and Dart; fix app ↔ engine event mismatch | TD-12, ADR-001 | M | BL-15 |
