@@ -122,10 +122,10 @@ audit-dart: ## OSV-Scanner on the Flutter lockfile
 db-shell: ## Open psql shell
 	docker compose exec postgres psql -U postgres -d tradingbot
 
-db-reset: ## Drop and recreate the database
+db-reset: ## Drop and recreate the local database (destroys local data, including the audit log)
 	docker compose exec postgres psql -U postgres -c "DROP DATABASE IF EXISTS tradingbot;"
 	docker compose exec postgres psql -U postgres -c "CREATE DATABASE tradingbot;"
-	docker compose exec postgres psql -U postgres -d tradingbot -f /docker-entrypoint-initdb.d/init.sql
+	docker compose restart bot-engine  # migrations run on start
 
 # ── Cloud deploy (Fly.io) ─────────────────────────────────────────
 deploy-fly: deploy-signal-fly deploy-engine-fly ## Deploy both services to Fly.io

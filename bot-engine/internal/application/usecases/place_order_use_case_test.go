@@ -61,6 +61,45 @@ func (m *mockPublisher) Publish(_ context.Context, e ports.DomainEvent) error {
 	return nil
 }
 
+func (m *mockPublisher) ofType(eventType string) []ports.DomainEvent {
+	var out []ports.DomainEvent
+	for _, e := range m.published {
+		if e.Type == eventType {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// recordingAudit keeps events and can be made to fail.
+type recordingAudit struct {
+	events []ports.AuditEvent
+	fail   error
+}
+
+func (a *recordingAudit) Record(_ context.Context, e ports.AuditEvent) error {
+	if a.fail != nil {
+		return a.fail
+	}
+	a.events = append(a.events, e)
+	return nil
+}
+
+func (a *recordingAudit) actions() []string {
+	out := make([]string, len(a.events))
+	for i, e := range a.events {
+		out[i] = e.Action
+	}
+	return out
+}
+
+type switchState struct {
+	engaged bool
+	err     error
+}
+
+func (s switchState) Engaged(context.Context) (bool, error) { return s.engaged, s.err }
+
 // ── Helpers ──────────────────────────────────────────────────
 
 func buySignal() *ports.Signal {
@@ -126,8 +165,8 @@ func TestPlaceOrder_SuccessfulBuy(t *testing.T) {
 	require.NotNil(t, out.Order.FilledPrice)
 	assert.True(t, out.Order.FilledPrice.Equal(decimal.NewFromInt(150)))
 	assert.Len(t, repo.savedOrders, 1)
-	assert.Len(t, publisher.published, 1)
-	assert.Equal(t, "OrderPlaced", publisher.published[0].Type)
+	require.Len(t, publisher.ofType(usecases.EventOrderPlaced), 1)
+	assert.Len(t, publisher.ofType(usecases.EventSignalReceived), 1)
 }
 
 func TestPlaceOrder_SendsOrderIDAsClientOrderID(t *testing.T) {
@@ -163,7 +202,7 @@ func TestPlaceOrder_SkipsHoldSignal(t *testing.T) {
 	assert.Contains(t, out.SkipReason, "HOLD")
 	assert.Nil(t, out.Order)
 	assert.Empty(t, repo.savedOrders)
-	assert.Empty(t, publisher.published)
+	assert.Empty(t, publisher.ofType(usecases.EventOrderPlaced))
 	assert.Empty(t, broker.Submitted)
 }
 
@@ -307,4 +346,84 @@ func TestPlaceOrder_PositionSizingUsesRiskRules(t *testing.T) {
 	assert.False(t, out.Skipped)
 	require.NotNil(t, out.Order)
 	assert.True(t, out.Order.Quantity.Equal(decimal.RequireFromString("0.666666")), out.Order.Quantity.String())
+}
+
+// ── Audit (BL-14) and kill switch (BL-19) ─────────────────────
+
+func TestPlaceOrder_AuditsSubmissionWithInputs(t *testing.T) {
+	audit := &recordingAudit{}
+	uc := buildUseCase(paperBroker(100_000), &mockOrderRepo{}, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()).WithAudit(audit)
+	out, err := run(t, uc)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"order.submit_requested", "order.submitted"}, audit.actions())
+	req := audit.events[0]
+	assert.Equal(t, out.Order.ID.String(), req.Target)
+	assert.Equal(t, "100000", req.Payload["equity"])
+	assert.Equal(t, "33.333333", req.Payload["qty"])
+	assert.Equal(t, "sig-001", req.Payload["signal_id"])
+	assert.Equal(t, "filled", audit.events[1].Result)
+}
+
+func TestPlaceOrder_AuditsSkipsWithReason(t *testing.T) {
+	audit := &recordingAudit{}
+	uc := buildUseCase(paperBroker(100_000), &mockOrderRepo{}, &mockSignalService{signal: holdSignal()}, &mockPublisher{}, defaultRules()).WithAudit(audit)
+	_, err := run(t, uc)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"order.skipped"}, audit.actions())
+	assert.Equal(t, "HOLD signal", audit.events[0].Payload["reason"])
+}
+
+func TestPlaceOrder_AuditsRejectionClassNotText(t *testing.T) {
+	audit := &recordingAudit{}
+	broker := paperBroker(100_000)
+	broker.FailSubmit = fmt.Errorf("alpaca: %w: account PA3SECRET", ports.ErrInsufficientFunds)
+	uc := buildUseCase(broker, &mockOrderRepo{}, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()).WithAudit(audit)
+	_, err := run(t, uc)
+
+	require.Error(t, err)
+	assert.Equal(t, []string{"order.submit_requested", "order.rejected"}, audit.actions())
+	assert.Equal(t, "insufficient_funds", audit.events[1].Payload["error_class"])
+	assert.NotContains(t, fmt.Sprint(audit.events), "PA3SECRET")
+}
+
+func TestPlaceOrder_AuditFailureBlocksSubmission(t *testing.T) {
+	broker := paperBroker(100_000)
+	repo := &mockOrderRepo{}
+	uc := buildUseCase(broker, repo, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()).
+		WithAudit(&recordingAudit{fail: errors.New("db down")})
+	_, err := run(t, uc)
+
+	assert.ErrorIs(t, err, usecases.ErrAuditUnavailable)
+	assert.Empty(t, broker.Submitted, "fail closed: no audit record, no order")
+	require.Len(t, repo.updatedOrders, 1)
+	assert.Equal(t, entities.OrderStatusRejected, repo.updatedOrders[0].Status)
+}
+
+func TestPlaceOrder_KillSwitchBlocksBeforeAnyCall(t *testing.T) {
+	for name, state := range map[string]switchState{
+		"engaged":           {engaged: true},
+		"state unavailable": {err: errors.New("db down")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			broker := paperBroker(100_000)
+			signals := &mockSignalService{signal: buySignal()}
+			audit := &recordingAudit{}
+			uc := buildUseCase(broker, &mockOrderRepo{}, signals, &mockPublisher{}, defaultRules()).WithAudit(audit).WithKillSwitch(state)
+			_, err := run(t, uc)
+
+			assert.ErrorIs(t, err, ports.ErrKillSwitchEngaged)
+			assert.Empty(t, broker.Submitted)
+			assert.Equal(t, []string{"order.blocked"}, audit.actions())
+		})
+	}
+}
+
+func TestPlaceOrder_KillSwitchReleasedAllowsOrders(t *testing.T) {
+	uc := buildUseCase(paperBroker(100_000), &mockOrderRepo{}, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()).
+		WithKillSwitch(switchState{engaged: false})
+	out, err := run(t, uc)
+	require.NoError(t, err)
+	assert.False(t, out.Skipped)
 }

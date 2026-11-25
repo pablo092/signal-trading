@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ws-event.schema.json",
+  "title": "WebSocketEvent",
+  "description": "Every message bot-engine sends on /ws (v1). Clients must ignore unknown types.",
+  "type": "object",
+  "required": ["v", "type", "id", "ts", "data"],
+  "additionalProperties": false,
+  "properties": {
+    "v": {"const": 1},
+    "type": {"enum": ["signal.received", "order.placed", "kill_switch.changed"]},
+    "id": {"type": "string", "minLength": 1},
+    "ts": {"type": "string", "format": "date-time"},
+    "data": {"type": "object"}
+  },
+  "oneOf": [
+    {"properties": {"type": {"const": "signal.received"}, "data": {"$ref": "signal.schema.json"}}},
+    {"properties": {"type": {"const": "order.placed"}, "data": {"$ref": "order.schema.json"}}},
+    {"properties": {"type": {"const": "kill_switch.changed"}, "data": {"$ref": "kill-switch.schema.json"}}}
+  ]
+}

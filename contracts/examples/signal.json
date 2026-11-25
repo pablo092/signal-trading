@@ -1,0 +1,12 @@
+{
+  "id": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+  "symbol": "AAPL",
+  "direction": "BUY",
+  "strength": "STRONG",
+  "price": 189.42,
+  "confidence": 0.82,
+  "reason": "RSI(14) = 27.3: oversold",
+  "strategy_name": "RSIStrategy(period=14)",
+  "is_actionable": true,
+  "generated_at": "2026-11-25T14:30:00.123456+00:00"
+}

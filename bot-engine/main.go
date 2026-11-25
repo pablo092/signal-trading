@@ -19,14 +19,22 @@ import (
 	"github.com/trading-bot/bot-engine/internal/application/eventbus"
 	"github.com/trading-bot/bot-engine/internal/application/usecases"
 	"github.com/trading-bot/bot-engine/internal/domain/entities"
+	"github.com/trading-bot/bot-engine/internal/domain/ports"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/auditlog"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/auth"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/broker"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/config"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/http/server"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/messaging"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/postgres"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/repository"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/signalclient"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/telemetry"
 )
+
+// version is stamped at build time (-ldflags "-X main.version=...") and
+// reported as the OTel service.version.
+var version = "dev"
 
 func main() {
 	// ── Config ──────────────────────────────────────────────
@@ -53,6 +61,13 @@ func main() {
 		zap.Int("port", cfg.Port),
 	)
 
+	// ── Tracing (BL-17): OTLP export only when an endpoint is configured ──
+	shutdownTracing, err := telemetry.Init(context.Background(), "bot-engine", version, cfg.Environment, logger)
+	if err != nil {
+		// Observability must never stop trading safety paths from starting.
+		logger.Error("telemetry.init_failed", zap.Error(err))
+	}
+
 	// ── Infrastructure layer ─────────────────────────────────
 	// ADR-004: the adapter verifies paper mode against Alpaca itself and refuses
 	// to start otherwise (fail closed).
@@ -64,25 +79,70 @@ func main() {
 	}
 	signalSvc := signalclient.New(cfg.SignalServiceURL, cfg.SignalServiceToken, logger)
 	bus := eventbus.New(logger)
-	hub := messaging.NewWSHub(logger)
+	hub := messaging.NewWSHub(cfg.WSAllowedOrigins, logger)
 
 	// Wire events to WebSocket broadcasts
-	bus.Subscribe("OrderPlaced", hub.HandleDomainEvent)
-	bus.Subscribe("OrderFilled", hub.HandleDomainEvent)
+	// Relay domain events to WebSocket clients as contract events (BL-16).
+	bus.Subscribe(usecases.EventSignalReceived, hub.HandleDomainEvent)
+	bus.Subscribe(usecases.EventOrderPlaced, hub.HandleDomainEvent)
+
+	// ── Persistence (BL-14): Postgres when DATABASE_URL is set, else in memory ──
+	var (
+		orderRepo  ports.OrderRepositoryPort
+		auditLog   ports.AuditLogPort
+		killStore  ports.KillSwitchStore
+		closeStore = func() {}
+	)
+	if cfg.DatabaseURL != "" {
+		pool, err := postgres.Open(context.Background(), cfg.DatabaseURL)
+		if err != nil {
+			logger.Fatal("postgres.open_failed", zap.Error(err))
+		}
+		applied, err := postgres.Migrate(context.Background(), pool)
+		if err != nil {
+			logger.Fatal("postgres.migrate_failed", zap.Error(err))
+		}
+		logger.Info("postgres.ready", zap.Strings("migrations_applied", applied))
+		orderRepo, auditLog, killStore = postgres.NewOrderRepo(pool), postgres.NewAuditLog(pool), postgres.NewKillSwitchStore(pool)
+		closeStore = pool.Close
+	} else {
+		logger.Warn("persistence.in_memory: DATABASE_URL is not set; orders and the kill-switch flag do not survive a restart, audit events go to the log only")
+		orderRepo, auditLog, killStore = repository.NewInMemoryOrderRepo(), auditlog.NewMemory(logger), &auditlog.MemoryKillSwitch{}
+	}
+	defer closeStore()
+
+	// ── Kill switch (BL-19): loaded before any traffic; KILL_SWITCH=true forces it on ──
+	killSwitch := usecases.NewKillSwitchService(killStore, alpacaBroker, auditLog, bus, cfg.KillSwitchForced, logger)
+	if err := killSwitch.Init(context.Background()); err != nil {
+		logger.Error("kill_switch.init_failed: trading is refused until the state can be read", zap.Error(err))
+	}
+	bus.Subscribe(usecases.EventKillSwitchChanged, hub.HandleDomainEvent)
 
 	// ── Application layer ────────────────────────────────────
-	// In-memory order repo (swap for PostgreSQL repo in production)
-	orderRepo := repository.NewInMemoryOrderRepo()
 	riskRules := entities.DefaultRiskRules()
 	if err := riskRules.Validate(); err != nil {
 		logger.Fatal("risk_rules.invalid", zap.Error(err))
 	}
-	placeOrderUC := usecases.NewPlaceOrderUseCase(
-		alpacaBroker, orderRepo, signalSvc, bus, riskRules, logger,
-	)
+	placeOrderUC := usecases.NewPlaceOrderUseCase(alpacaBroker, orderRepo, signalSvc, bus, riskRules, logger).
+		WithAudit(auditLog).WithKillSwitch(killSwitch)
 
 	// ── Prometheus registry ──────────────────────────────────
 	reg := prometheus.NewRegistry()
+	reg.MustRegister(
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "bot_engine_ws_clients_connected",
+			Help: "WebSocket clients currently connected to the hub.",
+		}, func() float64 { return float64(hub.ConnectedClients()) }),
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "bot_engine_kill_switch_engaged",
+			Help: "1 while the kill switch blocks new orders (stored state or KILL_SWITCH env), else 0.",
+		}, func() float64 {
+			if killSwitch.EngagedNow() {
+				return 1
+			}
+			return 0
+		}),
+	)
 
 	// ── Auth (ADR-003): scoped service tokens, deny by default ─
 	tokens, err := auth.LoadStore(cfg.AuthTokensJSON, cfg.AuthTokensFile)
@@ -102,6 +162,7 @@ func main() {
 		Config:     cfg,
 		Tokens:     tokens,
 		PlaceOrder: placeOrderUC,
+		KillSwitch: killSwitch,
 		Broker:     alpacaBroker,
 		Hub:        hub,
 		Registry:   reg,
@@ -141,6 +202,11 @@ func main() {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("http.shutdown_error", zap.Error(err))
+	}
+	if shutdownTracing != nil {
+		if err := shutdownTracing(shutdownCtx); err != nil {
+			logger.Warn("telemetry.shutdown_error", zap.Error(err)) // flush of buffered spans failed
+		}
 	}
 
 	logger.Info("bot_engine.stopped")

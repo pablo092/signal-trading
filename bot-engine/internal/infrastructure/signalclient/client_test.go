@@ -8,6 +8,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/shopspring/decimal"
+	"github.com/trading-bot/bot-engine/internal/contracttest"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/reqid"
 )
 
@@ -60,5 +62,21 @@ func TestGetSignalForwardsRequestID(t *testing.T) {
 	}
 	if got != "corr-123" {
 		t.Fatalf("X-Request-ID = %q, want corr-123", got)
+	}
+}
+
+// BL-16 consumer test: the canonical signal example decodes completely.
+func TestDecodesTheContractSignalExample(t *testing.T) {
+	example := contracttest.Example(t, "signal.json")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(example) }))
+	defer srv.Close()
+	s, err := New(srv.URL, "t", zap.NewNop()).GetSignal(context.Background(), "AAPL", "rsi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.ID != "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f" || s.Direction != "BUY" || s.Strength != "STRONG" ||
+		!s.Price.Equal(decimal.RequireFromString("189.42")) || s.Confidence != 0.82 || !s.IsActionable ||
+		s.StrategyName != "RSIStrategy(period=14)" || s.GeneratedAt.IsZero() {
+		t.Fatalf("decoded %+v", s)
 	}
 }

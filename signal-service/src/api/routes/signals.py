@@ -29,6 +29,7 @@ from src.domain.value_objects import Symbol, Timeframe
 from src.infrastructure.adapters.alpaca_market_data import AlpacaMarketDataAdapter
 from src.infrastructure.auth import SCOPE_MARKET_READ, require_scope
 from src.infrastructure.config import Settings
+from src.infrastructure.observability import SIGNALS_GENERATED
 
 logger = structlog.get_logger(__name__)
 # Every route on this router requires market:read (ADR-003, deny by default).
@@ -107,6 +108,11 @@ async def generate_signal(
         )
 
         latency = time.perf_counter() - t0
+        SIGNALS_GENERATED.labels(
+            direction=signal.direction.value,
+            strategy=signal.strategy_name,
+            symbol=str(signal.symbol),
+        ).inc()
         log.info(
             "signal.generated",
             direction=signal.direction.value,

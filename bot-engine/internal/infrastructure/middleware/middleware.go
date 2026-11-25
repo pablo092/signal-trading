@@ -3,12 +3,16 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/trading-bot/bot-engine/internal/infrastructure/http/apierror"
@@ -70,10 +74,24 @@ func Tracing(serviceName string) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		ctx := propagator.Extract(c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))
-		ctx, span := tracer.Start(ctx, c.FullPath())
+		route := c.FullPath()
+		if route == "" {
+			route = "unmatched" // never the raw path: it would make span names unbounded
+		}
+		ctx, span := tracer.Start(ctx, c.Request.Method+" "+route, trace.WithSpanKind(trace.SpanKindServer))
 		defer span.End()
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
+		status := c.Writer.Status()
+		span.SetAttributes(
+			attribute.String("http.request.method", c.Request.Method),
+			attribute.String("http.route", route),
+			attribute.Int("http.response.status_code", status),
+			attribute.String("request_id", c.GetString(reqid.GinKey)),
+		)
+		if status >= http.StatusInternalServerError {
+			span.SetStatus(codes.Error, http.StatusText(status))
+		}
 	}
 }
 
@@ -101,8 +119,8 @@ func PrometheusMetrics(reg prometheus.Registerer) gin.HandlerFunc {
 			path = "unknown"
 		}
 
-		statusStr := http.StatusText(c.Writer.Status())
-		requestsTotal.WithLabelValues(c.Request.Method, path, statusStr).Inc()
+		// Numeric status ("503") so dashboards can select classes with regexes like "5..".
+		requestsTotal.WithLabelValues(c.Request.Method, path, strconv.Itoa(c.Writer.Status())).Inc()
 		requestDuration.WithLabelValues(c.Request.Method, path).Observe(time.Since(start).Seconds())
 	}
 }

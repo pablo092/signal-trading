@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/zap"
 
 	"github.com/trading-bot/bot-engine/internal/domain/ports"
@@ -70,6 +72,8 @@ func (c *Client) GetSignal(ctx context.Context, symbol, strategy string) (*ports
 		return nil, fmt.Errorf("building signal request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// W3C trace context, so signal-service spans join the engine's trace (BL-17).
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 	if id := reqid.FromContext(ctx); id != "" {
 		req.Header.Set(reqid.Header, id) // correlate engine and signal-service logs
 	}

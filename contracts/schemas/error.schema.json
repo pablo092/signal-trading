@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "error.schema.json",
+  "title": "Error",
+  "description": "The error envelope of every non-2xx response from bot-engine and signal-service (BL-20).",
+  "type": "object",
+  "required": ["error", "detail"],
+  "additionalProperties": false,
+  "properties": {
+    "error": {"type": "string", "pattern": "^[a-z][a-z_]*$"},
+    "detail": {"type": "string", "minLength": 1},
+    "request_id": {"type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$"},
+    "required_scope": {"type": "string"}
+  }
+}

@@ -37,6 +37,19 @@ type Config struct {
 	AuthTokensJSON string
 	AuthTokensFile string
 
+	// DatabaseURL enables Postgres persistence (orders, audit_events, kill
+	// switch). Empty = in-memory stores, audit to logs only (BL-14).
+	DatabaseURL string
+
+	// KillSwitchForced (KILL_SWITCH=true) engages the kill switch at startup and
+	// keeps it engaged: it cannot be released through the API (ADR-005 §5.7).
+	KillSwitchForced bool
+
+	// WSAllowedOrigins is the browser origin allowlist for /ws (BL-15).
+	// Requests without an Origin header (non-browser clients) are allowed;
+	// they still need a token.
+	WSAllowedOrigins []string
+
 	// verified is set by Validate once the paper-mode guard has passed.
 	verified bool
 }
@@ -53,6 +66,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	killSwitch, err := getEnvBoolStrict("KILL_SWITCH", false)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		Environment:           getEnv("ENV", "development"),
 		Port:                  getEnvInt("PORT", 8080),
@@ -65,6 +83,9 @@ func Load() (*Config, error) {
 		SignalServiceToken:    os.Getenv("SIGNAL_SERVICE_TOKEN"),
 		AuthTokensJSON:        os.Getenv("AUTH_TOKENS"),
 		AuthTokensFile:        os.Getenv("AUTH_TOKENS_FILE"),
+		DatabaseURL:           os.Getenv("DATABASE_URL"),
+		KillSwitchForced:      killSwitch,
+		WSAllowedOrigins:      splitList(os.Getenv("WS_ALLOWED_ORIGINS")),
 	}
 
 	if cfg.AlpacaAPIKey == "" {
@@ -154,4 +175,15 @@ func getEnvBoolStrict(key string, defaultValue bool) (bool, error) {
 		return false, fmt.Errorf("%s must be a boolean, got %q", key, v)
 	}
 	return b, nil
+}
+
+// splitList parses a comma-separated list, dropping empty items.
+func splitList(v string) []string {
+	var out []string
+	for _, item := range strings.Split(v, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }

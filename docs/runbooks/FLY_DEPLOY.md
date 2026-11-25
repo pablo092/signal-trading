@@ -33,6 +33,18 @@ token server-side (Vercel env var `SIGNAL_SERVICE_TOKEN`) and forwards validated
 
 To revoke the demo: remove the `vercel-demo` entry from `AUTH_TOKENS` on both apps.
 
+## M2 runtime settings
+
+| Setting | Fly value | Effect |
+|---|---|---|
+| `DATABASE_URL` | unset | in-memory orders and kill switch; audit events go to the log only. An engaged kill switch does not survive a restart: see [KILL_SWITCH.md](KILL_SWITCH.md) |
+| `KILL_SWITCH` | unset | set `true` (as a secret, restarts the machines) to force-stop orders durably |
+| `WS_ALLOWED_ORIGINS` | unset | no browser origin may open `/ws` (the web feed is disabled anyway) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | no traces exported (no collector on Fly) |
+
+Adding Postgres later: create a database, then `flyctl secrets set DATABASE_URL=... -a trading-bot-engine`.
+The engine applies its migrations on start and refuses to start if they fail.
+
 ## Deploy
 
 ```sh

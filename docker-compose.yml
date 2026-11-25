@@ -51,6 +51,8 @@ services:
       AUTH_TOKENS:      ${SERVICE_AUTH_TOKENS:-}
       ALPACA_DATA_FEED: ${ALPACA_DATA_FEED:-iex}
       METRICS_ENABLED:  "true"
+      # BL-17: spans export only when set, e.g. http://jaeger:4318 with --profile full.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health/live').raise_for_status()"]
       interval: 30s
@@ -84,6 +86,17 @@ services:
       # bot-engine's own plaintext token for calling signal-service (needs market:read).
       SIGNAL_SERVICE_TOKEN: ${BOT_ENGINE_SIGNAL_TOKEN:-}
       SIGNAL_SERVICE_URL: http://signal-service:8000
+      # BL-14: empty = in-memory stores (orders, kill switch) and audit to the log.
+      # With --profile full: postgres://postgres:<password>@postgres:5432/tradingbot?sslmode=disable
+      # The engine applies its own migrations on start (internal/infrastructure/postgres/migrations).
+      DATABASE_URL:       ${BOT_ENGINE_DATABASE_URL:-}
+      # BL-19: "true" forces the kill switch on; it cannot be released through the API.
+      KILL_SWITCH:        ${KILL_SWITCH:-false}
+      # BL-15: comma-separated browser origins allowed to open /ws, e.g. the
+      # Flutter web dev server (http://localhost:5000). Empty = no browser origin;
+      # native clients (no Origin header) still connect with a token.
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
       signal-service:
         condition: service_healthy
@@ -113,8 +126,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD-}   # image refuses to init when empty
       POSTGRES_DB:       tradingbot
     volumes:
+      # No init script: bot-engine owns the schema through its migrations (BL-14).
       - postgres-data:/var/lib/postgresql/data
-      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:

@@ -8,7 +8,6 @@ Metrics:     http://localhost:8000/metrics
 
 from __future__ import annotations
 
-import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -16,16 +15,14 @@ import structlog
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from prometheus_client import Counter, Histogram, make_asgi_app
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import Response
+from prometheus_client import make_asgi_app
 
 from src.api.errors import install as install_error_handling
 from src.api.routes import signals as signals_router
 from src.api.schemas import HealthResponse
 from src.infrastructure.auth import TokenStore
 from src.infrastructure.config import Settings
+from src.infrastructure.observability import PrometheusMiddleware, init_tracing
 
 # ── Structured logging ───────────────────────────────────────────────────────
 structlog.configure(
@@ -38,34 +35,7 @@ structlog.configure(
 )
 logger = structlog.get_logger(__name__)
 
-# ── Prometheus metrics ───────────────────────────────────────────────────────
-REQUEST_COUNT = Counter(
-    "http_requests_total",
-    "Total HTTP requests",
-    ["method", "endpoint", "status"],
-)
-REQUEST_LATENCY = Histogram(
-    "http_request_duration_seconds",
-    "HTTP request latency",
-    ["method", "endpoint"],
-    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
-)
-SIGNALS_GENERATED = Counter(
-    "signals_generated_total",
-    "Total signals generated",
-    ["direction", "strategy", "symbol"],
-)
-
-
-class PrometheusMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        start = time.perf_counter()
-        response = await call_next(request)
-        duration = time.perf_counter() - start
-        endpoint = request.url.path
-        REQUEST_COUNT.labels(request.method, endpoint, str(response.status_code)).inc()
-        REQUEST_LATENCY.labels(request.method, endpoint).observe(duration)
-        return response
+# Prometheus metrics and tracing live in src.infrastructure.observability (BL-17).
 
 
 # ── App lifecycle ────────────────────────────────────────────────────────────
@@ -79,6 +49,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         paper_trading=settings.paper_trading,
     )
     yield
+    app.state.shutdown_tracing()  # flush buffered spans before exit
     logger.info("signal_service.stopped")
 
 
@@ -153,6 +124,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # ── API routes ───────────────────────────────────────────────────────────
     app.include_router(signals_router.router)
+
+    # ── Tracing: OTLP export only when OTEL_EXPORTER_OTLP_ENDPOINT is set ─────
+    app.state.shutdown_tracing = init_tracing(
+        app, service_version=app.version, environment=settings.environment
+    )
 
     return app
 

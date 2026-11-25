@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kill-switch.schema.json",
+  "title": "KillSwitch",
+  "description": "Kill-switch state: GET/POST /api/v1/admin/kill-switch response, and the data of a kill_switch.changed event. persisted and cancel_all appear only in the response to engaging.",
+  "type": "object",
+  "required": ["engaged", "forced", "reason", "updated_by", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "engaged": {"type": "boolean"},
+    "forced": {"type": "boolean"},
+    "reason": {"type": "string"},
+    "updated_by": {"type": "string"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "persisted": {"type": "boolean"},
+    "cancel_all": {"enum": ["ok", "failed"]}
+  }
+}

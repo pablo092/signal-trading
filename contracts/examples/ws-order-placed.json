@@ -1,0 +1,23 @@
+{
+  "v": 1,
+  "type": "order.placed",
+  "id": "1c9f8d2b-3a4e-4f5a-9b0c-1d2e3f4a5b6c",
+  "ts": "2026-11-25T14:30:01.25Z",
+  "data": {
+    "id": "a3b4c5d6-e7f8-4a9b-8c0d-1e2f3a4b5c6d",
+    "symbol": "AAPL",
+    "side": "buy",
+    "type": "market",
+    "status": "filled",
+    "quantity": 26.396367,
+    "filled_qty": 26.396367,
+    "filled_price": 189.45,
+    "limit_price": null,
+    "broker_id": "61e69015-8549-4bfd-b9c3-01e75843f47d",
+    "strategy_id": "rsi",
+    "signal_id": "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f",
+    "created_at": "2026-11-25T14:30:00.9Z",
+    "updated_at": "2026-11-25T14:30:01.2Z",
+    "filled_at": "2026-11-25T14:30:01.1Z"
+  }
+}

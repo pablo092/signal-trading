@@ -5,11 +5,13 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../domain/entities/signal_entity.dart';
+import 'ws_events.dart';
 
 class SignalRemoteDataSource {
   final http.Client _http;
   final String _baseUrl;
   final String _wsUrl;
+  final String _wsToken;
 
   WebSocketChannel? _channel;
   final _streamController = StreamController<SignalEntity>.broadcast();
@@ -18,9 +20,11 @@ class SignalRemoteDataSource {
     required http.Client httpClient,
     required String baseUrl,
     required String wsUrl,
+    String wsToken = '',
   })  : _http = httpClient,
         _baseUrl = baseUrl,
-        _wsUrl = wsUrl;
+        _wsUrl = wsUrl,
+        _wsToken = wsToken;
 
   /// POST /api/v1/signals/generate
   Future<SignalEntity> generateSignal(String symbol, String strategy) async {
@@ -50,17 +54,19 @@ class SignalRemoteDataSource {
   void _connect() {
     if (_wsUrl.isEmpty) return; // live feed disabled (web demo)
     _channel?.sink.close();
-    _channel = WebSocketChannel.connect(Uri.parse(_wsUrl));
+    // BL-15: browsers cannot send an Authorization header on a WebSocket, so
+    // the token travels as the second subprotocol ("bearer", token).
+    _channel = WebSocketChannel.connect(
+      Uri.parse(_wsUrl),
+      protocols: _wsToken.isEmpty ? null : ['bearer', _wsToken],
+    );
     _channel!.stream.listen(
       (data) {
+        if (data is! String) return;
         try {
-          final json = jsonDecode(data as String) as Map<String, dynamic>;
-          if (json['type'] == 'signal') {
-            _streamController.add(SignalEntity.fromJson(
-              json['data'] as Map<String, dynamic>,
-            ));
-          }
-        } catch (_) {}
+          final signal = WsEvent.tryParse(data)?.signal;
+          if (signal != null) _streamController.add(signal);
+        } catch (_) {} // malformed signal data: skip the message
       },
       onError: (_) => Future.delayed(
         const Duration(seconds: 3),

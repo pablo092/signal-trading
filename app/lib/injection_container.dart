@@ -1,6 +1,7 @@
 import 'package:get_it/get_it.dart';
 import 'package:http/http.dart' as http;
 
+import 'core/config.dart';
 import 'features/portfolio/data/portfolio_api.dart';
 import 'features/signals/data/datasources/signal_remote_data_source.dart';
 import 'features/signals/data/repositories/signal_repository_impl.dart';
@@ -23,6 +24,7 @@ Future<void> setupDependencies({
       httpClient: sl(),
       baseUrl: baseUrl,
       wsUrl: wsUrl,
+      wsToken: AppConfig.wsToken,
     ),
   );
 

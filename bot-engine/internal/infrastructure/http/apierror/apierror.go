@@ -23,9 +23,14 @@ const (
 	CodeSignalUnavailable = "signal_unavailable"
 	CodeOrderRejected     = "order_rejected"
 	CodeOutcomeUnknown    = "order_outcome_unknown"
-	CodeNotFound          = "not_found"
-	CodeMethodNotAllowed  = "method_not_allowed"
-	CodeInternal          = "internal_error"
+	CodeAuditUnavailable  = "audit_unavailable"
+
+	CodeKillSwitchEngaged     = "kill_switch_engaged"
+	CodeKillSwitchForced      = "kill_switch_forced"
+	CodeKillSwitchUnavailable = "kill_switch_unavailable"
+	CodeNotFound              = "not_found"
+	CodeMethodNotAllowed      = "method_not_allowed"
+	CodeInternal              = "internal_error"
 )
 
 // Body is the error envelope.

@@ -26,6 +26,7 @@ import (
 	"github.com/trading-bot/bot-engine/internal/application/usecases"
 	"github.com/trading-bot/bot-engine/internal/domain/entities"
 	"github.com/trading-bot/bot-engine/internal/domain/ports"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/auditlog"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/auth"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/broker/fakebroker"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/config"
@@ -82,8 +83,12 @@ func newSignalStub(t *testing.T) *signalStub {
 	return s
 }
 
+const adminToken = "admin-token-for-tests"
+
 type orderEnv struct {
 	router *gin.Engine
+	ks     *usecases.KillSwitchService
+	audit  *auditlog.Memory
 	broker *fakebroker.Broker
 	repo   *repository.InMemoryOrderRepo
 	signal *signalStub
@@ -91,6 +96,11 @@ type orderEnv struct {
 }
 
 func newOrderEnv(t *testing.T, execEnabled bool) *orderEnv {
+	t.Helper()
+	return newOrderEnvForced(t, execEnabled, false)
+}
+
+func newOrderEnvForced(t *testing.T, execEnabled, forced bool) *orderEnv {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	cfg := &config.Config{PaperTrading: true, AlpacaBaseURL: "https://paper-api.alpaca.markets", OrderExecutionEnabled: execEnabled}
@@ -101,12 +111,14 @@ func newOrderEnv(t *testing.T, execEnabled bool) *orderEnv {
 		{ID: "mcp-gateway", Type: auth.ActorAgent, SHA256: auth.HashToken(agentToken), Scopes: []string{auth.ScopeMarketRead, auth.ScopePortfolioRead}},
 		{ID: "owner", Type: auth.ActorHuman, SHA256: auth.HashToken(humanToken), Scopes: []string{auth.ScopePortfolioRead, auth.ScopeOrdersPlaceLegacy}},
 		{ID: "app", Type: auth.ActorService, SHA256: auth.HashToken(appToken), Scopes: []string{auth.ScopeMarketRead}},
+		{ID: "oncall", Type: auth.ActorHuman, SHA256: auth.HashToken(adminToken), Scopes: []string{auth.ScopePortfolioRead, auth.ScopeAdminKillswitch}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	e := &orderEnv{
+		audit:  auditlog.NewMemory(zap.NewNop()),
 		broker: fakebroker.New(decimal.NewFromInt(100_000)),
 		repo:   repository.NewInMemoryOrderRepo(),
 		signal: newSignalStub(t),
@@ -117,8 +129,13 @@ func newOrderEnv(t *testing.T, execEnabled bool) *orderEnv {
 	bus.Subscribe("OrderPlaced", func(_ context.Context, ev ports.DomainEvent) { e.events <- ev })
 
 	signals := signalclient.New(e.signal.srv.URL, engineSignalToken, zap.NewNop())
-	uc := usecases.NewPlaceOrderUseCase(e.broker, e.repo, signals, bus, entities.DefaultRiskRules(), zap.NewNop())
-	e.router = NewRouter(Deps{Config: cfg, Tokens: store, PlaceOrder: uc, Broker: e.broker, Hub: &fakeHub{}, Registry: prometheus.NewRegistry(), Logger: zap.NewNop()})
+	e.ks = usecases.NewKillSwitchService(&auditlog.MemoryKillSwitch{}, e.broker, e.audit, bus, forced, zap.NewNop())
+	if err := e.ks.Init(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	uc := usecases.NewPlaceOrderUseCase(e.broker, e.repo, signals, bus, entities.DefaultRiskRules(), zap.NewNop()).
+		WithAudit(e.audit).WithKillSwitch(e.ks)
+	e.router = NewRouter(Deps{Config: cfg, Tokens: store, PlaceOrder: uc, KillSwitch: e.ks, Broker: e.broker, Hub: &fakeHub{}, Registry: prometheus.NewRegistry(), Logger: zap.NewNop()})
 	return e
 }
 
@@ -413,5 +430,100 @@ func TestOrderPath_ConcurrentOrdersGetDistinctClientOrderIDs(t *testing.T) {
 		if !seen[o.ID.String()] {
 			t.Fatalf("persisted order %s has no broker order", o.ID)
 		}
+	}
+}
+
+// ── kill switch (BL-19) and audit trail (BL-14) ──
+
+func (e *orderEnv) killSwitch(t *testing.T, method, token, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, "/api/v1/admin/kill-switch", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	w := httptest.NewRecorder()
+	e.router.ServeHTTP(w, req)
+	return w
+}
+
+func (e *orderEnv) auditActions() []string {
+	var out []string
+	for _, ev := range e.audit.Events() {
+		out = append(out, ev.Action)
+	}
+	return out
+}
+
+func TestKillSwitch_EngageBlocksOrdersAndReleaseResumes(t *testing.T) {
+	e := newOrderEnv(t, true)
+	if w := e.killSwitch(t, "GET", humanToken, ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"engaged":false`) {
+		t.Fatalf("initial state: %d %s", w.Code, w.Body.String())
+	}
+
+	w := e.killSwitch(t, "POST", adminToken, `{"engaged":true,"reason":"runaway strategy"}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"cancel_all":"ok"`) || !strings.Contains(w.Body.String(), `"updated_by":"oncall"`) {
+		t.Fatalf("engage: %d %s", w.Code, w.Body.String())
+	}
+	decodeEnvelope(t, e.place(t, humanToken, aaplBody), http.StatusConflict, apierror.CodeKillSwitchEngaged)
+	if e.signal.calls.Load() != 0 || len(e.broker.Submitted) != 0 {
+		t.Fatal("a halted engine must not call upstreams")
+	}
+
+	if w := e.killSwitch(t, "POST", adminToken, `{"engaged":false,"reason":"fixed"}`); w.Code != 200 {
+		t.Fatalf("release: %d %s", w.Code, w.Body.String())
+	}
+	decodePlace(t, e.place(t, humanToken, aaplBody))
+
+	got := strings.Join(e.auditActions(), ",")
+	if !strings.HasPrefix(got, "kill_switch.engaged,order.blocked,kill_switch.released,order.submit_requested,order.submitted") {
+		t.Fatalf("audit trail = %s", got)
+	}
+	for _, ev := range e.audit.Events() {
+		if ev.Action == "kill_switch.engaged" && (ev.Actor.ID != "oncall" || ev.RequestID == "") {
+			t.Fatalf("engage event lacks actor or request ID: %+v", ev)
+		}
+	}
+}
+
+func TestKillSwitch_OnlyAdminScopeMayChangeIt(t *testing.T) {
+	e := newOrderEnv(t, true)
+	body := `{"engaged":true,"reason":"x"}`
+	decodeEnvelope(t, e.killSwitch(t, "POST", "", body), http.StatusUnauthorized, apierror.CodeUnauthorized)
+	for _, tok := range []string{humanToken, agentToken, appToken} {
+		decodeEnvelope(t, e.killSwitch(t, "POST", tok, body), http.StatusForbidden, apierror.CodeInsufficientScope)
+	}
+	if engaged, _ := e.ks.Engaged(context.Background()); engaged {
+		t.Fatal("an unauthorized call engaged the switch")
+	}
+}
+
+func TestKillSwitch_InvalidRequests(t *testing.T) {
+	e := newOrderEnv(t, true)
+	for _, body := range []string{``, `{}`, `{"engaged":true}`, `{"engaged":true,"reason":"   "}`, `{"engaged":"yes","reason":"x"}`,
+		`{"engaged":true,"reason":"` + strings.Repeat("x", 201) + `"}`} {
+		decodeEnvelope(t, e.killSwitch(t, "POST", adminToken, body), http.StatusBadRequest, apierror.CodeInvalidRequest)
+	}
+}
+
+func TestKillSwitch_EnvOverrideCannotBeReleased(t *testing.T) {
+	e := newOrderEnvForced(t, true, true)
+	w := e.killSwitch(t, "GET", humanToken, "")
+	if !strings.Contains(w.Body.String(), `"engaged":true`) || !strings.Contains(w.Body.String(), `"forced":true`) {
+		t.Fatalf("state: %s", w.Body.String())
+	}
+	decodeEnvelope(t, e.killSwitch(t, "POST", adminToken, `{"engaged":false,"reason":"try"}`), http.StatusConflict, apierror.CodeKillSwitchForced)
+	decodeEnvelope(t, e.place(t, humanToken, aaplBody), http.StatusConflict, apierror.CodeKillSwitchEngaged)
+}
+
+func TestKillSwitch_EngageCancelsOpenOrdersEvenIfBrokerFails(t *testing.T) {
+	e := newOrderEnv(t, true)
+	e.broker.FailCancel = fmt.Errorf("alpaca cancel all: %w: %s", ports.ErrUnavailable, rawSecret)
+	w := e.killSwitch(t, "POST", adminToken, `{"engaged":true,"reason":"incident"}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"cancel_all":"failed"`) || strings.Contains(w.Body.String(), rawSecret) {
+		t.Fatalf("engage with failing broker: %d %s", w.Code, w.Body.String())
+	}
+	if engaged, _ := e.ks.Engaged(context.Background()); !engaged {
+		t.Fatal("the switch must hold even when cancel-all fails")
 	}
 }

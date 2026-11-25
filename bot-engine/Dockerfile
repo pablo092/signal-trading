@@ -9,8 +9,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+# Reported as OTel service.version; pass e.g. --build-arg VERSION=$(git rev-parse --short HEAD).
+ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -ldflags="-w -s -extldflags=-static" \
+    go build -ldflags="-w -s -extldflags=-static -X main.version=${VERSION}" \
     -o bot-engine ./main.go
 
 # ── Runtime ───────────────────────────────────────────────────────

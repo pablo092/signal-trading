@@ -28,6 +28,10 @@ bot-engine and signal-service answer every error with the same JSON body:
 | `order_rejected` | 422 | bot-engine | The broker refused the order (e.g. insufficient buying power); it is stored as `rejected` |
 | `order_outcome_unknown` | 502 | bot-engine | The broker did not confirm the order and could not be queried; it may exist. **Do not retry**: the order stays `pending` until reconciled (BL-23) |
 | `market_data_unavailable` | 503 | signal-service | Alpaca market data failed or timed out |
+| `kill_switch_engaged` | 409 | bot-engine | The kill switch is on (or its state could not be read): no order was sent. See [KILL_SWITCH.md](KILL_SWITCH.md) |
+| `kill_switch_forced` | 409 | bot-engine | `KILL_SWITCH=true` is set on the engine; the API cannot release it |
+| `kill_switch_unavailable` | 503 | bot-engine | The kill-switch state could not be read or written; trading stays refused |
+| `audit_unavailable` | 503 | bot-engine | The audit record could not be written before submitting, so the order was **not** sent (fails closed) and is stored as `rejected` |
 | `not_found` / `method_not_allowed` | 404 / 405 | both | Unknown route or method |
 | `internal_error` | 500 | both | Unexpected failure (panic or unhandled exception) |
 
@@ -48,3 +52,34 @@ new UUID. It is propagated on every hop and appears in each log line:
 flyctl logs -a trading-bot-engine --no-tail | grep '<request_id>'
 flyctl logs -a trading-bot-signal-service --no-tail | grep '<request_id>'
 ```
+
+## Distributed traces (BL-17)
+
+Both services export OpenTelemetry spans over OTLP/HTTP **only when**
+`OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) is set; otherwise
+no exporter is created. bot-engine sends W3C `traceparent` to signal-service, so one order
+request is one trace across both. Server spans carry `request_id`, so a log line leads to
+its trace and back.
+
+```sh
+# Local: Jaeger accepts OTLP on 4318 (profile full)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 docker compose --profile full up -d
+# then open http://localhost:16686 and search service bot-engine
+```
+
+Fly has no collector, so tracing is off there. Never log the endpoint or
+`OTEL_EXPORTER_OTLP_HEADERS`: hosted collectors put API keys in them.
+
+## Metrics (BL-17)
+
+| Metric | Service | Notes |
+| --- | --- | --- |
+| `http_requests_total{method,path,status}` | bot-engine | `status` is numeric (`"503"`); `path` is the route template, `unknown` when unmatched |
+| `http_requests_total{method,endpoint,status}` | signal-service | `endpoint` is the route template, `unmatched` when no route matched |
+| `http_request_duration_seconds` | both | histogram, same labels minus `status` |
+| `signals_generated_total{direction,strategy,symbol}` | signal-service | one per generated signal |
+| `bot_engine_ws_clients_connected` | bot-engine | gauge |
+| `bot_engine_kill_switch_engaged` | bot-engine | 1 while orders are blocked; alert on it |
+
+signal-service runs one uvicorn worker: Prometheus counters are per process, so several
+workers would make every scrape read a different process. Scale with replicas.

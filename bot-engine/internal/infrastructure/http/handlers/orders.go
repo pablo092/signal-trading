@@ -61,9 +61,11 @@ type placeOrderResponse struct {
 //	@Failure      400   {object}  map[string]string
 //	@Failure      401   {object}  map[string]string
 //	@Failure      403   {object}  map[string]string  "execution_disabled or insufficient_scope"
+//	@Failure      409   {object}  apierror.Body  "kill_switch_engaged"
 //	@Failure      422   {object}  apierror.Body  "order_rejected"
 //	@Failure      500   {object}  apierror.Body  "internal_error"
 //	@Failure      502   {object}  apierror.Body  "signal_unavailable, broker_unavailable or order_outcome_unknown"
+//	@Failure      503   {object}  apierror.Body  "audit_unavailable"
 //	@Router       /api/v1/orders/place [post]
 func (h *OrdersHandler) PlaceOrder(c *gin.Context) {
 	if !h.executionEnabled || h.placeOrder == nil {
@@ -108,6 +110,10 @@ func (h *OrdersHandler) PlaceOrder(c *gin.Context) {
 // or a caller might retry and place the order twice.
 func placeOrderError(err error) (int, string, string) {
 	switch {
+	case errors.Is(err, ports.ErrKillSwitchEngaged):
+		return http.StatusConflict, apierror.CodeKillSwitchEngaged, "trading is halted by the kill switch"
+	case errors.Is(err, usecases.ErrAuditUnavailable):
+		return http.StatusServiceUnavailable, apierror.CodeAuditUnavailable, "the audit log is unavailable; the order was not sent"
 	case errors.Is(err, usecases.ErrOutcomeUnknown):
 		return http.StatusBadGateway, apierror.CodeOutcomeUnknown,
 			"the broker did not confirm the order; it may exist — do not retry, check the order status"

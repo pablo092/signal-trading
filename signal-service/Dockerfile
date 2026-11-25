@@ -34,4 +34,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:8000/health/ready').raise_for_status()"
 
-CMD ["uvicorn", "--factory", "src.main:create_app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# One worker: Prometheus counters live in process memory, so with several workers
+# each scrape would read a different process. Scale with replicas instead.
+CMD ["uvicorn", "--factory", "src.main:create_app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

@@ -1,0 +1,6 @@
+{
+  "error": "insufficient_scope",
+  "detail": "the token lacks the scope this route requires",
+  "request_id": "vercel-3f2a1b0c",
+  "required_scope": "portfolio:read"
+}
