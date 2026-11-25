@@ -23,7 +23,10 @@ bot-engine and signal-service answer every error with the same JSON body:
 | `invalid_request` | 400 / 422 | both | Malformed body or parameter; `detail` names the field |
 | `strategy_not_found` | 422 | signal-service | Unknown strategy; `detail` lists the available ones |
 | `insufficient_data` | 422 | signal-service | Not enough bars for the strategy |
-| `broker_unavailable` | 502 | bot-engine | Alpaca did not answer or failed |
+| `broker_unavailable` | 502 | bot-engine | Alpaca did not answer or failed; on the order route the order was **not** placed |
+| `signal_unavailable` | 502 | bot-engine | signal-service did not return a signal for the order route |
+| `order_rejected` | 422 | bot-engine | The broker refused the order (e.g. insufficient buying power); it is stored as `rejected` |
+| `order_outcome_unknown` | 502 | bot-engine | The broker did not confirm the order and could not be queried; it may exist. **Do not retry**: the order stays `pending` until reconciled (BL-23) |
 | `market_data_unavailable` | 503 | signal-service | Alpaca market data failed or timed out |
 | `not_found` / `method_not_allowed` | 404 / 405 | both | Unknown route or method |
 | `internal_error` | 500 | both | Unexpected failure (panic or unhandled exception) |

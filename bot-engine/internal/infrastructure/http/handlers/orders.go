@@ -2,12 +2,14 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
 	"github.com/trading-bot/bot-engine/internal/application/usecases"
+	"github.com/trading-bot/bot-engine/internal/domain/ports"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/http/apierror"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/reqid"
 )
@@ -59,7 +61,9 @@ type placeOrderResponse struct {
 //	@Failure      400   {object}  map[string]string
 //	@Failure      401   {object}  map[string]string
 //	@Failure      403   {object}  map[string]string  "execution_disabled or insufficient_scope"
-//	@Failure      500   {object}  map[string]string
+//	@Failure      422   {object}  apierror.Body  "order_rejected"
+//	@Failure      500   {object}  apierror.Body  "internal_error"
+//	@Failure      502   {object}  apierror.Body  "signal_unavailable, broker_unavailable or order_outcome_unknown"
 //	@Router       /api/v1/orders/place [post]
 func (h *OrdersHandler) PlaceOrder(c *gin.Context) {
 	if !h.executionEnabled || h.placeOrder == nil {
@@ -79,7 +83,8 @@ func (h *OrdersHandler) PlaceOrder(c *gin.Context) {
 	})
 	if err != nil {
 		h.logger.Error("place_order.failed", zap.Error(err), zap.String("request_id", reqid.FromContext(c.Request.Context())))
-		apierror.Abort(c, http.StatusInternalServerError, apierror.CodeInternal, "the order could not be processed")
+		status, code, detail := placeOrderError(err)
+		apierror.Abort(c, status, code, detail)
 		return
 	}
 
@@ -96,4 +101,25 @@ func (h *OrdersHandler) PlaceOrder(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// placeOrderError maps a use-case error to a status, code and fixed detail.
+// Order matters: an unknown outcome must never be reported as a plain failure,
+// or a caller might retry and place the order twice.
+func placeOrderError(err error) (int, string, string) {
+	switch {
+	case errors.Is(err, usecases.ErrOutcomeUnknown):
+		return http.StatusBadGateway, apierror.CodeOutcomeUnknown,
+			"the broker did not confirm the order; it may exist — do not retry, check the order status"
+	case errors.Is(err, usecases.ErrSignalUnavailable):
+		return http.StatusBadGateway, apierror.CodeSignalUnavailable, "the signal service did not return a signal"
+	case errors.Is(err, ports.ErrInsufficientFunds):
+		return http.StatusUnprocessableEntity, apierror.CodeOrderRejected, "the broker rejected the order: insufficient buying power"
+	case errors.Is(err, ports.ErrRejected), errors.Is(err, ports.ErrInvalidOrder):
+		return http.StatusUnprocessableEntity, apierror.CodeOrderRejected, "the broker rejected the order"
+	case errors.Is(err, ports.ErrUnavailable), errors.Is(err, ports.ErrRateLimited):
+		return http.StatusBadGateway, apierror.CodeBrokerUnavailable, "the broker is unavailable; the order was not placed"
+	default:
+		return http.StatusInternalServerError, apierror.CodeInternal, "the order could not be processed"
+	}
 }
