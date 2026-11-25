@@ -1,54 +1,44 @@
 # bot-engine — Fly.io deployment config
-# Deploy: cd bot-engine && flyctl deploy
+#
+# Public API + WebSocket. Every /api/v1/* and /ws route requires a scoped token
+# (ADR-003); order execution stays disabled and the paper guard is enforced.
+# Deploy with: cd bot-engine && flyctl deploy
+#
+# Secrets (flyctl secrets set ... — never put real values here):
+#   ALPACA_API_KEY, ALPACA_SECRET_KEY   Alpaca PAPER keys
+#   AUTH_TOKENS                         token table (docs/runbooks/SERVICE_TOKENS.md)
+#   SIGNAL_SERVICE_TOKEN                bot-engine -> signal-service token
 
-app      = "trading-bot-engine"
-primary_region = "iad"    # us-east — same region as signal-service
+app            = "trading-bot-engine"
+primary_region = "iad"    # same region as signal-service
 
 [build]
   dockerfile = "Dockerfile"
 
 [env]
-  ENV           = "production"
-  PORT          = "8080"
-  PAPER_TRADING = "true"
+  ENV                     = "production"
+  PORT                    = "8080"
+  PAPER_TRADING           = "true"
   ORDER_EXECUTION_ENABLED = "false"
-  ALPACA_BASE_URL    = "https://paper-api.alpaca.markets"
-  # Point to the signal-service Fly internal address for zero-latency comms:
-  SIGNAL_SERVICE_URL = "http://trading-bot-signal-service.internal:8000"
+  ALPACA_BASE_URL         = "https://paper-api.alpaca.markets"
+  # Private Flycast address of signal-service (see signal-service/fly.toml).
+  SIGNAL_SERVICE_URL      = "http://trading-bot-signal-service.flycast"
 
-# Secrets (set via CLI):
-#   flyctl secrets set ALPACA_API_KEY=PKxxx ALPACA_SECRET_KEY=xxx
+[http_service]
+  internal_port        = 8080
+  force_https          = true
+  auto_stop_machines   = "off"   # always on: it owns the WebSocket feed
+  auto_start_machines  = true
+  min_machines_running = 1
 
-[[services]]
-  internal_port = 8080
-  protocol      = "tcp"
+  [[http_service.checks]]
+    interval     = "15s"
+    timeout      = "5s"
+    grace_period = "15s"
+    method       = "GET"
+    path         = "/health/ready"
 
-  [[services.ports]]
-    handlers = ["http"]
-    port     = 80
-    force_https = true
-
-  [[services.ports]]
-    handlers = ["tls", "http"]
-    port     = 443
-
-  # WebSocket support — keep connection alive
-  [[services.ports]]
-    handlers    = ["tls", "http"]
-    port        = 443
-    [services.ports.tls_options]
-      alpn            = ["h2", "http/1.1"]
-      versions        = ["TLSv1.2", "TLSv1.3"]
-
-  [[services.http_checks]]
-    interval       = "15s"
-    timeout        = "5s"
-    grace_period   = "15s"
-    method         = "GET"
-    path           = "/health/ready"
-    protocol       = "http"
-
-[resources]
+[[vm]]
   cpu_kind  = "shared"
   cpus      = 1
   memory_mb = 256
