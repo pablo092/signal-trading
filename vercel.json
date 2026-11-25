@@ -6,7 +6,7 @@
   "outputDirectory": "app/build/web",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ],
