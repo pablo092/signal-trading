@@ -21,6 +21,9 @@ Set with `flyctl secrets import -a <app>` from stdin; never commit or print valu
 
 Token table entries in production: `operator` (human; `market:read`, `portfolio:read`),
 `bot-engine` (service; `market:read`), `vercel-demo` (service; `market:read`).
+Since 2026-11-26 the bot-engine table also has `owner` (human; `portfolio:read`, `intent:approve`,
+`admin:killswitch`; held only by the owner, ADR-006) and gives `operator` `intent:create` and
+`admin:killswitch` (never `intent:approve`). signal-service keeps the three-entry table.
 Plaintext tokens live only in the operator's git-ignored `secrets/fly-tokens.env`.
 
 ## Web demo
