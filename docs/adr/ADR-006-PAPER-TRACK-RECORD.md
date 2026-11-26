@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **Proposed** |
+| Status | **Accepted** (2026-11-26, M4) |
 | Date | 2026-11-26 |
 | Deciders | Repository owner |
 | Related | ADR-005 (execution safety), BL-30 (live trading), M4 |
@@ -18,7 +18,7 @@ Define when paper execution may be switched on, what is measured while it runs, 
 2. **Phased paper operation with entry gates and stop rules.** Execution stays off until persistence, alerting and a kill-switch drill exist; then a fixed observation window with written metrics.
 3. **Never execute; keep proposing only.** Safe, but produces no fill, slippage or reconciliation evidence.
 
-## Decision (proposed)
+## Decision
 Option 2. This ADR never authorizes live trading: `PAPER_TRADING=true` and the paper-host guard (ADR-005 §5.1) stay non-negotiable.
 
 ### 6.1 Phase 0: dry run (now)
@@ -53,7 +53,7 @@ Entry gates remove the known gaps (no persistence on Fly, no alert routing) befo
 ## Consequences
 - Phase 1 needs a managed Postgres (Supabase free tier is enough; it pauses after a week idle, which the engine treats as a startup failure).
 - The owner must approve every order by hand for the whole window; throughput stays low by design.
-- The numbers (20 days, 30 fills, 5 %) are proposals for the owner to accept or change.
+- The numbers (20 days, 30 fills, 5 %) were accepted as proposed (2026-11-26); changing them needs an ADR update.
 
 ## Security implications
 No new capability: approval stays human-only and paper-only. Enabling execution is an explicit, logged owner action. The track-record log must not contain tokens or account identifiers.

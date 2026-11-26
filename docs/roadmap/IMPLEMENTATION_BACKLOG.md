@@ -58,7 +58,7 @@ Exit criteria:
 | BL-32 ✅ | Remove `POST /api/v1/orders/place`; port its HTTP tests to intents; keep `orders:place-legacy` loadable | ADR-005 | M | BL-21 |
 | BL-33 ✅ | Trading metrics (intent transitions, risk failures, fills, reconciler health) and Prometheus alert rules | ADR-006 §6.4 | S | BL-23 |
 | BL-34 ✅ | ADR-006 (paper track record: phases, entry gate, stop rules) and runbooks PAPER_TRACK_RECORD.md, SUPABASE.md | — | S | — |
-| BL-35 | Owner: create the Supabase project, set `DATABASE_URL`/`DATABASE_SCHEMA` on Fly, accept ADR-006, then run the phase-1 entry checklist | ADR-006 | S | BL-31, BL-34 |
+| BL-35 | Owner: create the Supabase project, set `DATABASE_URL`/`DATABASE_SCHEMA` on Fly, accept ADR-006 (all done 2026-11-26), then run the phase-1 entry checklist | ADR-006 | S | BL-31, BL-34 |
 
 ## Later / requires new ADR
 
