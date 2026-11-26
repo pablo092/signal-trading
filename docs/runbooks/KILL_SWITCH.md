@@ -15,8 +15,8 @@ engaged.
 | Read state | `GET /api/v1/admin/kill-switch` | `portfolio:read` |
 | Engage / release | `POST /api/v1/admin/kill-switch` | `admin:killswitch` (**human tokens only**, ADR-003) |
 
-No production token holds `admin:killswitch` by default. To grant it to the operator, add
-the scope to the `operator` entry of `AUTH_TOKENS` (see [SERVICE_TOKENS.md](SERVICE_TOKENS.md))
+On Fly, `owner` and `operator` hold `admin:killswitch` (since 2026-11-26, ADR-006 drill). To grant
+it elsewhere, add the scope to a `human` entry of `AUTH_TOKENS` (see [SERVICE_TOKENS.md](SERVICE_TOKENS.md))
 and restart. A token table that grants it to an `agent` or `service` entry fails to load, and
 such tokens are refused at request time as well. Give it only to `human` entries.
 
@@ -63,8 +63,8 @@ flyctl secrets unset KILL_SWITCH -a trading-bot-engine       # then release thro
 
 ## Without a database
 
-On Fly the engine runs without `DATABASE_URL`: an engaged switch **does not survive a
-restart or redeploy**. If it must stay on across restarts, use `KILL_SWITCH=true`.
+Without `DATABASE_URL` (local runs; on Fly it is set since 2026-11-26) an engaged switch
+**does not survive a restart or redeploy**. If it must stay on across restarts, use `KILL_SWITCH=true`.
 Audit events are then kept only in the log (`audit.event` lines with `payload_sha256`).
 
 ## Monitoring
