@@ -37,7 +37,7 @@ func TestHTTPResponsesMatchTheContract(t *testing.T) {
 		"401":                get("/api/v1/portfolio/equity", ""),
 		"403 required_scope": get("/api/v1/portfolio/equity", appToken),
 		"404":                get("/api/v1/nope", humanToken),
-		"409 kill switch":    e.place(t, humanToken, aaplBody).Body.Bytes(),
+		"409 kill switch":    e.propose(t, agentToken, aaplBody).Body.Bytes(),
 	} {
 		t.Run(name, func(t *testing.T) { contracttest.Validate(t, "error.schema.json", body) })
 	}

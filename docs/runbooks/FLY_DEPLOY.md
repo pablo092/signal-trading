@@ -55,7 +55,8 @@ To revoke the demo: remove the `vercel-demo` entry from `AUTH_TOKENS` on both ap
 Intents live in memory without `DATABASE_URL` and are lost on restart. Enabling execution is a
 separate, explicit decision: see [ORDER_INTENTS.md](ORDER_INTENTS.md).
 
-Adding Postgres later: create a database, then `flyctl secrets set DATABASE_URL=... -a trading-bot-engine`.
+Adding Postgres later: follow [SUPABASE.md](SUPABASE.md) (or any Postgres 14+), set `DATABASE_SCHEMA`
+and then `flyctl secrets set DATABASE_URL=... -a trading-bot-engine`.
 The engine applies its migrations on start and refuses to start if they fail.
 
 ## Deploy

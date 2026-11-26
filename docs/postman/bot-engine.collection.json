@@ -6,11 +6,26 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "bot_engine_url", "value": "http://localhost:8080", "type": "string" },
-    { "key": "bot_engine_ws_url", "value": "ws://localhost:8080/ws", "type": "string" }
+    {
+      "key": "bot_engine_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "bot_engine_ws_url",
+      "value": "ws://localhost:8080/ws",
+      "type": "string"
+    },
+    {
+      "key": "bot_engine_token",
+      "value": ""
+    },
+    {
+      "key": "intent_id",
+      "value": ""
+    }
   ],
   "item": [
-
     {
       "name": "Health",
       "item": [
@@ -18,104 +33,244 @@
           "name": "Liveness probe",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{bot_engine_url}}/health/live", "host": ["{{bot_engine_url}}"], "path": ["health", "live"] }
+            "url": {
+              "raw": "{{bot_engine_url}}/health/live",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "health",
+                "live"
+              ]
+            }
           },
-          "response": [{
-            "name": "200 OK",
-            "status": "OK",
-            "code": 200,
-            "body": "{\"status\":\"alive\"}"
-          }]
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\"status\":\"alive\"}"
+            }
+          ]
         },
         {
           "name": "Readiness probe",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{bot_engine_url}}/health/ready", "host": ["{{bot_engine_url}}"], "path": ["health", "ready"] }
-          },
-          "response": [{
-            "name": "200 OK",
-            "status": "OK",
-            "code": 200,
-            "body": "{\"status\":\"ready\",\"service\":\"bot-engine\",\"ws_clients\":2,\"paper_mode\":true}"
-          }]
-        }
-      ]
-    },
-
-    {
-      "name": "Orders",
-      "item": [
-        {
-          "name": "Place order — AAPL RSI",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": { "raw": "{{bot_engine_url}}/api/v1/orders/place", "host": ["{{bot_engine_url}}"], "path": ["api", "v1", "orders", "place"] },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"symbol\": \"AAPL\",\n  \"strategy\": \"rsi\"\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "description": "Fetches an RSI signal for AAPL, applies risk rules, and places a market order if actionable.\n\n**Flow**: signal-service → risk check → Alpaca broker → event bus → WebSocket broadcast"
+            "url": {
+              "raw": "{{bot_engine_url}}/health/ready",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
+            }
           },
           "response": [
             {
-              "name": "200 OK — order placed",
+              "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"skipped\": false,\n  \"order_id\": \"f47ac10b-58cc-4372-a567-0e02b2c3d479\",\n  \"symbol\": \"AAPL\",\n  \"side\": \"buy\",\n  \"quantity\": 3.33,\n  \"status\": \"submitted\"\n}"
-            },
-            {
-              "name": "200 OK — skipped (HOLD)",
-              "status": "OK",
-              "code": 200,
-              "body": "{\n  \"skipped\": true,\n  \"skip_reason\": \"HOLD signal\"\n}"
-            },
-            {
-              "name": "200 OK — skipped (low confidence)",
-              "status": "OK",
-              "code": 200,
-              "body": "{\n  \"skipped\": true,\n  \"skip_reason\": \"confidence 0.45 < minimum 0.60\"\n}"
+              "body": "{\"status\":\"ready\",\"service\":\"bot-engine\",\"ws_clients\":2,\"paper_mode\":true}"
             }
           ]
-        },
+        }
+      ],
+      "auth": {
+        "type": "noauth"
+      }
+    },
+    {
+      "name": "Order intents",
+      "description": "M3/M4 order flow (docs/runbooks/ORDER_INTENTS.md). Propose with an intent:create token; approve or reject with a human intent:approve token. Approval also needs ORDER_EXECUTION_ENABLED=true.",
+      "item": [
         {
-          "name": "Place order — TSLA MA Cross",
+          "name": "Propose intent — AAPL RSI",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": { "raw": "{{bot_engine_url}}/api/v1/orders/place", "host": ["{{bot_engine_url}}"], "path": ["api", "v1", "orders", "place"] },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{bot_engine_url}}/api/v1/order-intents",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-intents"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"symbol\": \"TSLA\",\n  \"strategy\": \"ma_cross\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\"symbol\":\"AAPL\",\"strategy\":\"rsi\"}"
+            },
+            "description": "Returns 201 pending_approval, or rejected with risk.checks. Save the id into intent_id."
+          }
+        },
+        {
+          "name": "Propose intent — missing Idempotency-Key (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bot_engine_url}}/api/v1/order-intents",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-intents"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"symbol\":\"AAPL\",\"strategy\":\"rsi\"}"
             }
           }
         },
         {
-          "name": "Place order — missing body (400)",
+          "name": "List pending intents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{bot_engine_url}}/api/v1/order-intents?status=pending_approval&limit=50",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-intents?status=pending_approval&limit=50"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get intent",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{bot_engine_url}}/api/v1/order-intents/{{intent_id}}",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-intents",
+                "{{intent_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Approve intent (human)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": { "raw": "{{bot_engine_url}}/api/v1/orders/place", "host": ["{{bot_engine_url}}"], "path": ["api", "v1", "orders", "place"] },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bot_engine_url}}/api/v1/order-intents/{{intent_id}}/approve",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-intents",
+                "{{intent_id}}",
+                "approve"
+              ]
+            },
             "body": {
               "mode": "raw",
-              "raw": "{}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\"reason\":\"checked the chart\"}"
+            }
+          }
+        },
+        {
+          "name": "Reject intent (human)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bot_engine_url}}/api/v1/order-intents/{{intent_id}}/reject",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-intents",
+                "{{intent_id}}",
+                "reject"
+              ]
             },
-            "description": "Expects 400 — symbol and strategy are required."
-          },
-          "response": [{
-            "name": "400 Bad Request",
-            "status": "Bad Request",
-            "code": 400,
-            "body": "{\"error\":\"Key: 'symbol' Error:Field validation for 'symbol' failed on the 'required' tag\"}"
-          }]
+            "body": {
+              "mode": "raw",
+              "raw": "{\"reason\":\"not today\"}"
+            }
+          }
+        },
+        {
+          "name": "Cancel own intent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bot_engine_url}}/api/v1/order-intents/{{intent_id}}/cancel",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "order-intents",
+                "{{intent_id}}",
+                "cancel"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
         }
       ]
     },
-
     {
       "name": "Portfolio",
       "item": [
@@ -123,33 +278,110 @@
           "name": "Get portfolio equity",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{bot_engine_url}}/api/v1/portfolio/equity", "host": ["{{bot_engine_url}}"], "path": ["api", "v1", "portfolio", "equity"] },
+            "url": {
+              "raw": "{{bot_engine_url}}/api/v1/portfolio/equity",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "portfolio",
+                "equity"
+              ]
+            },
             "description": "Returns current account equity, paper mode flag, and market status."
           },
-          "response": [{
-            "name": "200 OK",
-            "status": "OK",
-            "code": 200,
-            "body": "{\"equity\":100000.00,\"paper_mode\":true,\"market_open\":true}"
-          }]
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\"equity\":100000.00,\"paper_mode\":true,\"market_open\":true}"
+            }
+          ]
         },
         {
           "name": "Get open positions",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{bot_engine_url}}/api/v1/portfolio/positions", "host": ["{{bot_engine_url}}"], "path": ["api", "v1", "portfolio", "positions"] },
+            "url": {
+              "raw": "{{bot_engine_url}}/api/v1/portfolio/positions",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "portfolio",
+                "positions"
+              ]
+            },
             "description": "Returns all currently open positions with unrealized P&L."
           },
-          "response": [{
-            "name": "200 OK",
-            "status": "OK",
-            "code": 200,
-            "body": "[\n  {\n    \"symbol\": \"AAPL\",\n    \"quantity\": 3.33,\n    \"average_entry_price\": 182.50,\n    \"current_price\": 184.20,\n    \"unrealized_pnl\": 5.66\n  }\n]"
-          }]
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "[\n  {\n    \"symbol\": \"AAPL\",\n    \"quantity\": 3.33,\n    \"average_entry_price\": 182.50,\n    \"current_price\": 184.20,\n    \"unrealized_pnl\": 5.66\n  }\n]"
+            }
+          ]
         }
       ]
     },
-
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Get kill switch",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{bot_engine_url}}/api/v1/admin/kill-switch",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "kill-switch"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Engage kill switch (human admin:killswitch)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{bot_engine_url}}/api/v1/admin/kill-switch",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "kill-switch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"engaged\":true,\"reason\":\"incident\"}"
+            }
+          }
+        }
+      ]
+    },
     {
       "name": "Observability",
       "item": [
@@ -157,11 +389,31 @@
           "name": "Prometheus metrics",
           "request": {
             "method": "GET",
-            "url": { "raw": "{{bot_engine_url}}/metrics", "host": ["{{bot_engine_url}}"], "path": ["metrics"] }
+            "url": {
+              "raw": "{{bot_engine_url}}/metrics",
+              "host": [
+                "{{bot_engine_url}}"
+              ],
+              "path": [
+                "metrics"
+              ]
+            }
           }
         }
-      ]
+      ],
+      "auth": {
+        "type": "noauth"
+      }
     }
-
-  ]
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{bot_engine_token}}",
+        "type": "string"
+      }
+    ]
+  }
 }

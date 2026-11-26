@@ -107,6 +107,6 @@ curl -sS -X POST "$ENGINE/api/v1/order-intents/$ID/approve" -H "Authorization: B
   -H 'Content-Type: application/json' -d '{"reason":"checked chart"}'
 ```
 
-`POST /api/v1/orders/place` is **deprecated** (responses carry `Deprecation: true` and a
-`Link` to `/api/v1/order-intents`). It bypasses approval, so it stays behind the human-only
-`orders:place-legacy` scope and `ORDER_EXECUTION_ENABLED`; it will be removed.
+The legacy `POST /api/v1/orders/place` route was **removed in M4** (it now answers
+`404 not_found`): intents are the only way to place an order. The `orders:place-legacy`
+scope grants nothing but is still accepted in token tables, so old tables keep loading.

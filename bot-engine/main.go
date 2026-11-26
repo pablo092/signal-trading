@@ -26,6 +26,7 @@ import (
 	"github.com/trading-bot/bot-engine/internal/infrastructure/config"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/http/server"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/messaging"
+	"github.com/trading-bot/bot-engine/internal/infrastructure/metrics"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/postgres"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/repository"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/signalclient"
@@ -88,6 +89,12 @@ func main() {
 	bus.Subscribe(usecases.EventOrderFilled, hub.HandleDomainEvent)
 	bus.Subscribe(usecases.EventIntentUpdated, hub.HandleDomainEvent)
 
+	// ── Prometheus registry; trading metrics follow the same events (M4) ──
+	reg := prometheus.NewRegistry()
+	tradingMetrics := metrics.NewTrading(reg)
+	bus.Subscribe(usecases.EventIntentUpdated, tradingMetrics.HandleDomainEvent)
+	bus.Subscribe(usecases.EventOrderFilled, tradingMetrics.HandleDomainEvent)
+
 	// ── Persistence (BL-14): Postgres when DATABASE_URL is set, else in memory ──
 	var (
 		orderRepo  ports.OrderRepositoryPort
@@ -97,7 +104,7 @@ func main() {
 		closeStore = func() {}
 	)
 	if cfg.DatabaseURL != "" {
-		pool, err := postgres.Open(context.Background(), cfg.DatabaseURL)
+		pool, err := postgres.Open(context.Background(), cfg.DatabaseURL, cfg.DatabaseSchema)
 		if err != nil {
 			logger.Fatal("postgres.open_failed", zap.Error(err))
 		}
@@ -105,7 +112,7 @@ func main() {
 		if err != nil {
 			logger.Fatal("postgres.migrate_failed", zap.Error(err))
 		}
-		logger.Info("postgres.ready", zap.Strings("migrations_applied", applied))
+		logger.Info("postgres.ready", zap.String("schema", cfg.DatabaseSchema), zap.Strings("migrations_applied", applied))
 		orderRepo, auditLog, killStore = postgres.NewOrderRepo(pool), postgres.NewAuditLog(pool), postgres.NewKillSwitchStore(pool)
 		intentRepo = postgres.NewIntentRepo(pool)
 		closeStore = pool.Close
@@ -128,8 +135,6 @@ func main() {
 	if err := riskRules.Validate(); err != nil {
 		logger.Fatal("risk_rules.invalid", zap.Error(err))
 	}
-	placeOrderUC := usecases.NewPlaceOrderUseCase(alpacaBroker, orderRepo, signalSvc, bus, riskRules, logger).
-		WithAudit(auditLog).WithKillSwitch(killSwitch)
 
 	// ── Order intents (M3, ADR-005 §5.3–5.5) ─────────────────
 	riskPolicy := usecases.RiskPolicy{
@@ -154,6 +159,7 @@ func main() {
 	})
 	reconciler := usecases.NewReconciler(usecases.ReconcilerDeps{
 		Broker: alpacaBroker, Orders: orderRepo, Intents: intentRepo, Audit: auditLog, Publisher: bus, Logger: logger,
+		Observer: tradingMetrics,
 	})
 	logger.Info("order_intents.ready",
 		zap.Duration("ttl", cfg.Risk.IntentTTL), zap.Duration("signal_max_age", cfg.Risk.SignalMaxAge),
@@ -162,8 +168,7 @@ func main() {
 		zap.Bool("execution_enabled", cfg.OrderExecutionEnabled),
 	)
 
-	// ── Prometheus registry ──────────────────────────────────
-	reg := prometheus.NewRegistry()
+	// ── Engine gauges ────────────────────────────────────────
 	reg.MustRegister(
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "bot_engine_ws_clients_connected",
@@ -197,7 +202,6 @@ func main() {
 	router := server.NewRouter(server.Deps{
 		Config:     cfg,
 		Tokens:     tokens,
-		PlaceOrder: placeOrderUC,
 		KillSwitch: killSwitch,
 		Intents:    intentSvc,
 		Broker:     alpacaBroker,

@@ -25,7 +25,33 @@ type ReconcilerDeps struct {
 	// UnknownGrace is how long an order left pending by an unknown submit
 	// outcome may be missing at the broker before it counts as never placed.
 	UnknownGrace time.Duration
+	// Observer receives health signals for metrics (optional).
+	Observer ReconcilerObserver
 }
+
+// Reconciliation sources reported to the observer.
+const (
+	ReconciledByStream    = "stream"
+	ReconciledByPoll      = "poll"
+	ReconciledNeverPlaced = "not_placed"
+)
+
+// ReconcilerObserver is told what the reconciler does, so the infrastructure
+// layer can export metrics without this package depending on Prometheus.
+type ReconcilerObserver interface {
+	// StreamUp reports whether the trade-update stream call is running.
+	StreamUp(up bool)
+	// Reconciled counts one local order changed to match the broker.
+	Reconciled(source string)
+	// Polled marks a completed poll pass.
+	Polled(at time.Time)
+}
+
+type nopObserver struct{}
+
+func (nopObserver) StreamUp(bool)     {}
+func (nopObserver) Reconciled(string) {}
+func (nopObserver) Polled(time.Time)  {}
 
 // Reconciler keeps local orders and intents in step with the broker (BL-23).
 // It follows the broker's trade-update stream and also polls open orders,
@@ -43,6 +69,9 @@ func NewReconciler(d ReconcilerDeps) *Reconciler {
 	}
 	if d.UnknownGrace <= 0 {
 		d.UnknownGrace = 2 * time.Minute
+	}
+	if d.Observer == nil {
+		d.Observer = nopObserver{}
 	}
 	return &Reconciler{d: d, now: time.Now}
 }
@@ -70,7 +99,13 @@ func (r *Reconciler) stream(ctx context.Context) {
 	backoff := time.Second
 	for ctx.Err() == nil {
 		started := r.now()
-		err := r.d.Broker.StreamTradeUpdates(ctx, func(u ports.TradeUpdate) { r.Apply(ctx, u.Order) })
+		r.d.Observer.StreamUp(true)
+		err := r.d.Broker.StreamTradeUpdates(ctx, func(u ports.TradeUpdate) {
+			if r.Apply(ctx, u.Order) {
+				r.d.Observer.Reconciled(ReconciledByStream)
+			}
+		})
+		r.d.Observer.StreamUp(false)
 		if ctx.Err() != nil {
 			return
 		}
@@ -101,17 +136,20 @@ func (r *Reconciler) Poll(ctx context.Context) int {
 			switch {
 			case err == nil:
 				if r.Apply(ctx, bo) {
+					r.d.Observer.Reconciled(ReconciledByPoll)
 					changed++
 				}
 			case errors.Is(err, ports.ErrNotFound) && o.Status == entities.OrderStatusPending && r.now().Sub(o.CreatedAt) > r.d.UnknownGrace:
 				// Never reached the broker: safe to close, nothing to cancel.
 				r.closeNeverPlaced(ctx, o)
+				r.d.Observer.Reconciled(ReconciledNeverPlaced)
 				changed++
 			case err != nil:
 				r.d.Logger.Warn("reconciler.lookup_failed", zap.String("order_id", o.ID.String()), zap.String("error_class", errorClass(err)))
 			}
 		}
 	}
+	r.d.Observer.Polled(r.now())
 	return changed
 }
 

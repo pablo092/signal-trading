@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -43,6 +44,11 @@ type Config struct {
 	// DatabaseURL enables Postgres persistence (orders, audit_events, kill
 	// switch). Empty = in-memory stores, audit to logs only (BL-14).
 	DatabaseURL string
+
+	// DatabaseSchema (DATABASE_SCHEMA) puts every engine table in a dedicated
+	// schema, created on start. Empty = the server's default search_path.
+	// Required on Supabase, whose Data API exposes "public" (docs/runbooks/SUPABASE.md).
+	DatabaseSchema string
 
 	// KillSwitchForced (KILL_SWITCH=true) engages the kill switch at startup and
 	// keeps it engaged: it cannot be released through the API (ADR-005 §5.7).
@@ -96,6 +102,7 @@ func Load() (*Config, error) {
 		AuthTokensJSON:        os.Getenv("AUTH_TOKENS"),
 		AuthTokensFile:        os.Getenv("AUTH_TOKENS_FILE"),
 		DatabaseURL:           os.Getenv("DATABASE_URL"),
+		DatabaseSchema:        strings.TrimSpace(os.Getenv("DATABASE_SCHEMA")),
 		KillSwitchForced:      killSwitch,
 		WSAllowedOrigins:      splitList(os.Getenv("WS_ALLOWED_ORIGINS")),
 	}
@@ -136,6 +143,9 @@ func (c *Config) Validate() error {
 	}
 	if u.User != nil {
 		return fmt.Errorf("ALPACA_BASE_URL must not contain credentials")
+	}
+	if err := c.validateDatabase(); err != nil {
+		return err
 	}
 
 	c.verified = true
@@ -277,4 +287,38 @@ func splitList(v string) []string {
 		}
 	}
 	return out
+}
+
+var schemaPattern = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
+
+// validateDatabase checks DATABASE_URL and DATABASE_SCHEMA without ever
+// echoing the URL (it holds a password).
+func (c *Config) validateDatabase() error {
+	if c.DatabaseSchema != "" && (!schemaPattern.MatchString(c.DatabaseSchema) || strings.HasPrefix(c.DatabaseSchema, "pg_")) {
+		return fmt.Errorf("DATABASE_SCHEMA must match %s and not start with pg_", schemaPattern)
+	}
+	if c.DatabaseURL == "" {
+		return nil
+	}
+	u, err := url.Parse(c.DatabaseURL)
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Hostname() == "" {
+		return fmt.Errorf("DATABASE_URL must be a postgres:// URL (value withheld)")
+	}
+	host := strings.ToLower(u.Hostname())
+	if !strings.HasSuffix(host, ".supabase.co") && !strings.HasSuffix(host, ".supabase.com") {
+		return nil
+	}
+	// Supabase (docs/runbooks/SUPABASE.md).
+	if u.Port() == "6543" {
+		return fmt.Errorf("DATABASE_URL uses the Supabase transaction pooler (port 6543): the migrator's advisory lock and pgx prepared statements need the session pooler or a direct connection (port 5432)")
+	}
+	switch u.Query().Get("sslmode") {
+	case "require", "verify-ca", "verify-full":
+	default:
+		return fmt.Errorf("DATABASE_URL for Supabase must set sslmode=require (or verify-ca / verify-full)")
+	}
+	if c.DatabaseSchema == "" || c.DatabaseSchema == "public" {
+		return fmt.Errorf("DATABASE_SCHEMA must name a dedicated schema (e.g. tradingbot) on Supabase: tables in public are exposed by its Data API")
+	}
+	return nil
 }

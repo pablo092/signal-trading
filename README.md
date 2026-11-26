@@ -90,8 +90,10 @@ GitHub Actions is currently unavailable (billing), so run them locally before a 
 - Tokens: [docs/runbooks/SERVICE_TOKENS.md](docs/runbooks/SERVICE_TOKENS.md).
 - Kill switch: [docs/runbooks/KILL_SWITCH.md](docs/runbooks/KILL_SWITCH.md). Errors, traces and
   metrics: [docs/runbooks/ERRORS_AND_TRACING.md](docs/runbooks/ERRORS_AND_TRACING.md).
-- Postgres is optional: with `DATABASE_URL` bot-engine persists orders, the kill switch and an
-  append-only audit trail, applying its migrations on start; without it, they stay in memory.
+- Postgres is optional: with `DATABASE_URL` bot-engine persists orders, intents, the kill switch
+  and an append-only audit trail, applying its migrations on start; without it, they stay in
+  memory. Supabase works with a dedicated `DATABASE_SCHEMA`: [docs/runbooks/SUPABASE.md](docs/runbooks/SUPABASE.md).
+- Paper track record (phases, metrics, alerts, stop rules): [docs/runbooks/PAPER_TRACK_RECORD.md](docs/runbooks/PAPER_TRACK_RECORD.md), ADR-006.
 
 ## Safety
 

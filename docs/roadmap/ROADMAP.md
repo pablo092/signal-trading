@@ -8,6 +8,7 @@ The milestones are sequential: each one's exit criteria gate the next. Backlog i
 | **M1** | Safe read-only foundation; agents can query and analyze the market | **None reachable** (order route disabled, auth on) | BL-01…BL-13 | Planned |
 | **M2** | Persistence, observability, safety primitives (kill switch, BrokerPort v2) | Unchanged (disabled) | BL-07, BL-09, BL-14…BL-20 | **Implemented**, pending review (Dart contract tests and `-race` run in CI only) |
 | **M3** | Order intents with mandatory human approval, paper only | Paper, human-approved (still off on Fly: `ORDER_EXECUTION_ENABLED=false`) | BL-21…BL-26 | **Implemented**, pending review (Dart tests, `-race` and K8s dry-run run in CI only) |
+| **M4** | Paper operations: durable persistence (Supabase), metrics and alerts, legacy route removed, track-record rules (ADR-006) | Unchanged on Fly until the owner passes the ADR-006 entry gate | BL-31…BL-35 | **Implemented** (BL-31…34), pending review; BL-35 is the owner's |
 | Later | Async flows, Timescale, remote MCP transport, live trading | Each requires its own ADR | BL-27…BL-30 | Not planned |
 
 ## M1 definition of done

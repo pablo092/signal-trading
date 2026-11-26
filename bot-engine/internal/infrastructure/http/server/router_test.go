@@ -13,7 +13,6 @@ import (
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 
-	"github.com/trading-bot/bot-engine/internal/application/usecases"
 	"github.com/trading-bot/bot-engine/internal/domain/entities"
 	"github.com/trading-bot/bot-engine/internal/domain/ports"
 	"github.com/trading-bot/bot-engine/internal/infrastructure/auth"
@@ -50,26 +49,6 @@ func (b *fakeBroker) GetPositions(ctx context.Context) ([]entities.Position, err
 	return b.Broker.GetPositions(ctx)
 }
 
-type holdSignals struct{}
-
-func (holdSignals) GetSignal(_ context.Context, sym, strat string) (*ports.Signal, error) {
-	return &ports.Signal{Symbol: sym, Direction: "HOLD", StrategyName: strat}, nil
-}
-
-type nopRepo struct{}
-
-func (nopRepo) Save(context.Context, *entities.Order) error                    { return nil }
-func (nopRepo) FindByID(context.Context, interface{}) (*entities.Order, error) { return nil, nil }
-func (nopRepo) FindByStatus(context.Context, entities.OrderStatus) ([]*entities.Order, error) {
-	return nil, nil
-}
-func (nopRepo) FindBySymbol(context.Context, string) ([]*entities.Order, error) { return nil, nil }
-func (nopRepo) Update(context.Context, *entities.Order) error                   { return nil }
-
-type nopPub struct{}
-
-func (nopPub) Publish(context.Context, ports.DomainEvent) error { return nil }
-
 type fakeHub struct{ served []string }
 
 func (h *fakeHub) ServeWS(w http.ResponseWriter, _ *http.Request, id string) {
@@ -101,7 +80,7 @@ func newEnv(t *testing.T, execEnabled bool) *env {
 	}
 	store, err := auth.NewStore([]*auth.Principal{
 		{ID: "mcp-gateway", Type: auth.ActorAgent, SHA256: auth.HashToken(agentToken), Scopes: []string{auth.ScopeMarketRead, auth.ScopePortfolioRead}},
-		{ID: "owner", Type: auth.ActorHuman, SHA256: auth.HashToken(humanToken), Scopes: []string{auth.ScopePortfolioRead, auth.ScopeOrdersPlaceLegacy}},
+		{ID: "owner", Type: auth.ActorHuman, SHA256: auth.HashToken(humanToken), Scopes: []string{auth.ScopePortfolioRead, auth.ScopeIntentCreate, auth.ScopeIntentApprove}},
 		{ID: "app", Type: auth.ActorService, SHA256: auth.HashToken(appToken), Scopes: []string{auth.ScopeMarketRead}},
 	})
 	if err != nil {
@@ -109,8 +88,7 @@ func newEnv(t *testing.T, execEnabled bool) *env {
 	}
 	b := newFakeBroker()
 	h := &fakeHub{}
-	uc := usecases.NewPlaceOrderUseCase(b, nopRepo{}, holdSignals{}, nopPub{}, entities.DefaultRiskRules(), zap.NewNop())
-	r := NewRouter(Deps{Config: cfg, Tokens: store, PlaceOrder: uc, Broker: b, Hub: h, Registry: prometheus.NewRegistry(), Logger: zap.NewNop()})
+	r := NewRouter(Deps{Config: cfg, Tokens: store, Broker: b, Hub: h, Registry: prometheus.NewRegistry(), Logger: zap.NewNop()})
 	return &env{router: r, broker: b, hub: h}
 }
 
@@ -154,7 +132,8 @@ func TestProtectedRoutesRequireToken(t *testing.T) {
 	e := newEnv(t, true)
 	for _, rt := range []struct{ m, p string }{
 		{"GET", "/api/v1/trading-mode"}, {"GET", "/api/v1/portfolio/equity"},
-		{"GET", "/api/v1/portfolio/positions"}, {"GET", "/ws"}, {"POST", "/api/v1/orders/place"},
+		{"GET", "/api/v1/portfolio/positions"}, {"GET", "/ws"}, {"POST", "/api/v1/order-intents"},
+		{"POST", "/api/v1/order-intents/6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f/approve"},
 	} {
 		for _, tok := range []string{"", "wrong-token"} {
 			if w := e.do(rt.m, rt.p, tok, `{"symbol":"AAPL","strategy":"rsi"}`); w.Code != http.StatusUnauthorized {
@@ -195,22 +174,12 @@ func TestAgentTokenRejectedOnWriteRoutes(t *testing.T) {
 	}
 }
 
-func TestOrderRouteDisabledByDefault(t *testing.T) {
-	e := newEnv(t, false)
-	w := e.do("POST", "/api/v1/orders/place", humanToken, `{"symbol":"AAPL","strategy":"rsi"}`)
-	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "execution_disabled") {
-		t.Fatalf("got %d %s, want 403 execution_disabled", w.Code, w.Body.String())
-	}
-	if e.broker.submitted() != 0 {
-		t.Fatal("order reached the broker while execution is disabled")
-	}
-}
-
-func TestOrderRouteEnabledForHumanLegacyScope(t *testing.T) {
+// Without an IntentService the intent routes answer 503 instead of panicking.
+func TestIntentRoutesWithoutServiceAreUnavailable(t *testing.T) {
 	e := newEnv(t, true)
-	w := e.do("POST", "/api/v1/orders/place", humanToken, `{"symbol":"AAPL","strategy":"rsi"}`)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"skipped":true`) {
-		t.Fatalf("got %d %s, want 200 skipped (HOLD signal)", w.Code, w.Body.String())
+	w := e.do("GET", "/api/v1/order-intents", humanToken, "")
+	if w.Code != http.StatusServiceUnavailable || e.broker.submitted() != 0 {
+		t.Fatalf("got %d %s, want 503", w.Code, w.Body.String())
 	}
 }
 

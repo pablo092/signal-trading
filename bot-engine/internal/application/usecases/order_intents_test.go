@@ -104,7 +104,7 @@ func newIntentEnv(t *testing.T, mutate ...func(*usecases.IntentDeps)) *intentEnv
 	} else {
 		e.signals = d.Signals
 	}
-	d.Risk = usecases.NewRiskEngine(testPolicy(), e.broker, e.ks)
+	d.Risk = usecases.NewRiskEngine(testPolicy(), e.broker, d.KillSwitch)
 	e.svc = usecases.NewIntentService(d)
 	return e
 }

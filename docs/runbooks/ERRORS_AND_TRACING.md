@@ -6,7 +6,7 @@ bot-engine and signal-service answer every error with the same JSON body:
 
 ```json
 {"error": "insufficient_scope", "detail": "the token lacks the scope this route requires",
- "request_id": "mcp-agent-3f9c0d1e2a4b5c6d", "required_scope": "orders:place-legacy"}
+ "request_id": "mcp-agent-3f9c0d1e2a4b5c6d", "required_scope": "intent:create"}
 ```
 
 - `error`: a stable code. Clients branch on it; codes are never renamed.
@@ -87,6 +87,8 @@ Fly has no collector, so tracing is off there. Never log the endpoint or
 | `signals_generated_total{direction,strategy,symbol}` | signal-service | one per generated signal |
 | `bot_engine_ws_clients_connected` | bot-engine | gauge |
 | `bot_engine_kill_switch_engaged` | bot-engine | 1 while orders are blocked; alert on it |
+| `order_intent_transitions_total{status,rejection_code}`, `risk_check_failures_total{check,stage}`, `orders_filled_total{side}` | bot-engine | intent lifecycle (M4) |
+| `reconciler_trade_stream_up`, `reconciler_trade_stream_disconnects_total`, `reconciler_orders_reconciled_total{source}`, `reconciler_last_poll_timestamp_seconds` | bot-engine | reconciler health; alerts and meaning in [PAPER_TRACK_RECORD.md](PAPER_TRACK_RECORD.md) |
 
 signal-service runs one uvicorn worker: Prometheus counters are per process, so several
 workers would make every scrape read a different process. Scale with replicas.

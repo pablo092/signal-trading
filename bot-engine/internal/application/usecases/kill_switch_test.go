@@ -154,16 +154,25 @@ func TestKillSwitch_FailsClosedWhenStateUnreadable(t *testing.T) {
 	assert.True(t, engaged, "unknown state reads as engaged")
 }
 
-func TestKillSwitch_BlocksPlaceOrderEndToEnd(t *testing.T) {
-	e := newKS(t, false)
-	require.NoError(t, e.svc.Init(context.Background()))
-	uc := buildUseCase(e.broker, &mockOrderRepo{}, &mockSignalService{signal: buySignal()}, &mockPublisher{}, defaultRules()).WithKillSwitch(e.svc)
-	e.broker.SetFillPrice("AAPL", decimal.NewFromInt(150))
+func TestKillSwitch_BlocksIntentsEndToEnd(t *testing.T) {
+	var ks *usecases.KillSwitchService
+	e := newIntentEnv(t, func(d *usecases.IntentDeps) {
+		ks = usecases.NewKillSwitchService(&flakyStore{}, d.Broker, d.Audit, d.Publisher, false, zap.NewNop())
+		d.KillSwitch = ks
+	})
+	require.NoError(t, ks.Init(context.Background()))
 
-	_, err := run(t, uc)
+	before := e.create(t, "key-00000001")
+	_, err := e.svc.Approve(context.Background(), before.ID, human, "")
 	require.NoError(t, err)
-	_, _ = e.svc.Engage(owner, "halt")
-	_, err = run(t, uc)
-	assert.ErrorIs(t, err, ports.ErrKillSwitchEngaged)
+	pending := e.create(t, "key-00000002")
+
+	_, err = ks.Engage(owner, "halt")
+	require.NoError(t, err)
+	_, err = e.svc.Create(context.Background(), usecases.CreateIntentInput{Actor: agent, Symbol: "AAPL", Strategy: "rsi", IdempotencyKey: "key-00000003"})
+	assert.ErrorIs(t, err, ports.ErrKillSwitchEngaged, "no new intents while halted")
+	v, err := e.svc.Approve(context.Background(), pending.ID, human, "")
+	require.NoError(t, err)
+	assert.Equal(t, entities.RejectionKillSwitch, v.Intent.RejectionCode, "a pending intent cannot be approved while halted")
 	assert.Len(t, e.broker.Submitted, 1, "only the order before the halt")
 }
