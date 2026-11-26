@@ -48,6 +48,21 @@ All on bot-engine `GET /metrics`. Labels are bounded: no symbols, actors or IDs.
 | `OrderNeverReachedBroker` | warning | An approved order was closed as never placed (unknown submit outcome, not at the broker). Review the intent and the audit trail; re-propose if still wanted |
 | `BrokerRejectedIntent` | warning | Alpaca refused an approved order (e.g. buying power). Check the account |
 | `RiskRejectionsHigh` | info | Many proposals fail risk. Look at `risk_check_failures_total` by `check` |
+| `EngineMetricsMissing` | critical | Grafana only: no engine metrics for 5 minutes (engine down or not scraped). Check `flyctl status`; treat like `ReconcilerPollStale` |
+
+### Where the alerts run (Fly)
+
+Fly scrapes bot-engine `/metrics` (`[[metrics]]` in `bot-engine/fly.toml`) into its managed Prometheus.
+A Grafana Cloud stack evaluates the rules every minute and emails the owner:
+
+- Datasource `fly-prometheus`: Prometheus at `https://api.fly.io/prometheus/<org>/` with header
+  `Authorization: FlyV1 <token>` from `flyctl tokens create readonly <org>`. The token lives only in Grafana.
+- Folder `signal-trading`, group `trading` (1 m): the rules above, filtered by `app="trading-bot-engine"`,
+  plus `EngineMetricsMissing` (`absent_over_time(...[5m])`). `ReconcilerPollStale` also fires on no data.
+- Contact point `owner-email`, the root notification policy's receiver (repeat every 4 h).
+
+`trading.rules.yml` stays the source of truth: when a rule changes there, change it in Grafana too.
+To check it end to end, send a test from the contact point (Alerting → Contact points → Test).
 
 ## Weekly review
 
