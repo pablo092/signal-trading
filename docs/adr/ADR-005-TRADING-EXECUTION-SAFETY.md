@@ -94,6 +94,6 @@ Stop-loss and take-profit are attached as broker-side bracket orders when suppor
 - **Intent TTL and signal freshness:** 5 minutes each (`INTENT_TTL`, `RISK_SIGNAL_MAX_AGE`), one window for every timeframe.
 - **Absolute notional cap:** $1000 per order (`RISK_MAX_ORDER_NOTIONAL`), on top of the 5 %-of-equity sizing; the smaller wins.
 - **Other defaults:** symbol allowlist `SPY,QQQ,AAPL,MSFT` (an empty list refuses everything), strategies `rsi,ma_cross`, regular hours only, 10 intents per hour per actor, no short selling (a SELL only closes a held position).
-- **Legacy route:** `POST /api/v1/orders/place` stays, deprecated (`Deprecation: true`, `Link: </api/v1/order-intents>; rel="successor-version"`), until a later PR removes it.
+- **Legacy route:** `POST /api/v1/orders/place` stays, deprecated (`Deprecation: true`, `Link: </api/v1/order-intents>; rel="successor-version"`), until a later PR removes it. **Removed in M4** (now `404`).
 
 Implementation and operations: [ORDER_INTENTS.md](../runbooks/ORDER_INTENTS.md).

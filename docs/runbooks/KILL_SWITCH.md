@@ -1,8 +1,9 @@
 # Runbook: kill switch (ADR-005 §5.7, BL-19)
 
 The kill switch stops bot-engine from sending orders. While it is engaged, every
-`POST /api/v1/orders/place` answers `409 kill_switch_engaged` before the signal is even
-fetched. Engaging it also cancels all open orders at the broker.
+`POST /api/v1/order-intents` answers `409 kill_switch_engaged` before the signal is even
+fetched, and approving an existing intent rejects it with `rejection_code: kill_switch`
+(the submission-stage risk check fails). Engaging it also cancels all open orders at the broker.
 
 It **fails closed**: if its state cannot be read (database down), the engine treats it as
 engaged.

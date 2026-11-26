@@ -90,6 +90,8 @@ services:
       # With --profile full: postgres://postgres:<password>@postgres:5432/tradingbot?sslmode=disable
       # The engine applies its own migrations on start (internal/infrastructure/postgres/migrations).
       DATABASE_URL:       ${BOT_ENGINE_DATABASE_URL:-}
+      # M4: dedicated schema for every engine table (required on Supabase, docs/runbooks/SUPABASE.md).
+      DATABASE_SCHEMA:    ${DATABASE_SCHEMA:-}
       # BL-19: "true" forces the kill switch on; it cannot be released through the API.
       KILL_SWITCH:        ${KILL_SWITCH:-false}
       # BL-15: comma-separated browser origins allowed to open /ws, e.g. the

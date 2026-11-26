@@ -12,7 +12,7 @@ Public routes: `/health/live`, `/health/ready`, `/metrics` (both), plus `/docs`,
 |---|---|---|
 | `market:read` | signal-service `POST /api/v1/signals/generate`, `GET /api/v1/signals/strategies` | agent, human, service |
 | `portfolio:read` | `GET /api/v1/trading-mode`, `/portfolio/equity`, `/portfolio/positions`, `GET /ws`, `GET /api/v1/order-intents[/{id}]`, `GET /api/v1/admin/kill-switch` | agent, human, service |
-| `orders:place-legacy` | `POST /api/v1/orders/place` (deprecated since M3; removal in a later PR) | **human only** |
+| `orders:place-legacy` | none: `POST /api/v1/orders/place` was removed in M4. Still accepted in token tables so old tables load; drop it when you next edit the table | **human only** |
 | `intent:create` | `POST /api/v1/order-intents`, `POST /api/v1/order-intents/{id}/cancel` (own intents only) | agent, human |
 | `intent:approve` | `POST /api/v1/order-intents/{id}/approve` and `/reject` | **human only** |
 | `admin:killswitch` | `POST /api/v1/admin/kill-switch` | **human only** |
@@ -66,8 +66,9 @@ To revoke, remove the entry and restart.
 
 ## Order execution
 
-`POST /api/v1/orders/place` additionally requires `ORDER_EXECUTION_ENABLED=true` (default `false`).
-In M1 it stays `false`; the route answers `403 execution_disabled`.
+Approving an intent (`POST /api/v1/order-intents/{id}/approve`) additionally requires
+`ORDER_EXECUTION_ENABLED=true` (default `false`); otherwise it answers `403 execution_disabled`.
+Creating, rejecting and canceling intents work either way. See [ORDER_INTENTS.md](ORDER_INTENTS.md).
 
 ## Audit
 

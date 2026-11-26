@@ -57,6 +57,8 @@ data:
   RISK_STRATEGY_ALLOWLIST:    "rsi,ma_cross"
   RISK_ALLOW_EXTENDED_HOURS:  "false"
   INTENT_RATE_LIMIT_PER_HOUR: "10"
+  # Dedicated Postgres schema, used only when DATABASE_URL is set (required on Supabase).
+  DATABASE_SCHEMA:            "tradingbot"
 
 ---
 # ── Secret (sensitive values) ────────────────────────────────────
