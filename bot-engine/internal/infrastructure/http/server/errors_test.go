@@ -51,9 +51,9 @@ func TestBrokerErrorsAreSanitized(t *testing.T) {
 	}
 }
 
-func TestInvalidOrderBodyDoesNotEchoDecoderError(t *testing.T) {
-	e := newEnv(t, true)
-	w := e.do(http.MethodPost, "/api/v1/orders/place", humanToken, `{"symbol": 42}`)
+func TestInvalidIntentBodyDoesNotEchoDecoderError(t *testing.T) {
+	e := newIntentHTTPEnv(t, true)
+	w := e.do(t, http.MethodPost, "/api/v1/order-intents", proposerToken, `{"symbol": 42}`, "Idempotency-Key", "key-00000001")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
@@ -61,7 +61,7 @@ func TestInvalidOrderBodyDoesNotEchoDecoderError(t *testing.T) {
 	if b.Error != apierror.CodeInvalidRequest {
 		t.Fatalf("code = %q", b.Error)
 	}
-	for _, leak := range []string{"json:", "Go struct", "placeOrderRequest", "unmarshal"} {
+	for _, leak := range []string{"json:", "Go struct", "createIntentRequest", "unmarshal"} {
 		if strings.Contains(w.Body.String(), leak) {
 			t.Fatalf("response leaks decoder detail %q: %s", leak, w.Body.String())
 		}
@@ -74,8 +74,8 @@ func TestAuthAndPolicyErrorsUseEnvelope(t *testing.T) {
 		status                                int
 	}{
 		{"no token", http.MethodGet, "/api/v1/trading-mode", "", "", apierror.CodeUnauthorized, 401},
-		{"missing scope", http.MethodPost, "/api/v1/orders/place", agentToken, `{}`, apierror.CodeInsufficientScope, 403},
-		{"execution disabled", http.MethodPost, "/api/v1/orders/place", humanToken, `{}`, apierror.CodeExecutionDisabled, 403},
+		{"missing scope", http.MethodPost, "/api/v1/order-intents", agentToken, `{}`, apierror.CodeInsufficientScope, 403},
+		{"removed legacy route", http.MethodPost, "/api/v1/orders/place", humanToken, `{}`, apierror.CodeNotFound, 404},
 		{"unknown route", http.MethodGet, "/api/v1/nope", agentToken, "", apierror.CodeNotFound, 404},
 		{"wrong method", http.MethodDelete, "/api/v1/trading-mode", agentToken, "", apierror.CodeMethodNotAllowed, 405},
 	}
@@ -94,8 +94,8 @@ func TestAuthAndPolicyErrorsUseEnvelope(t *testing.T) {
 
 func TestInsufficientScopeKeepsRequiredScope(t *testing.T) {
 	// agent-gateway reads required_scope at the top level of the body.
-	w := newEnv(t, false).do(http.MethodPost, "/api/v1/orders/place", agentToken, `{}`)
-	if b := decodeErr(t, w); b.RequiredScope != "orders:place-legacy" {
+	w := newEnv(t, false).do(http.MethodPost, "/api/v1/order-intents", agentToken, `{}`)
+	if b := decodeErr(t, w); b.RequiredScope != "intent:create" {
 		t.Fatalf("required_scope = %q", b.RequiredScope)
 	}
 }

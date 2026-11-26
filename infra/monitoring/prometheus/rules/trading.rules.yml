@@ -1,0 +1,41 @@
+# M4 paper operations: alerts on the order-intent lifecycle and the reconciler.
+# Metrics: bot-engine internal/infrastructure/metrics (docs/runbooks/PAPER_TRACK_RECORD.md).
+groups:
+  - name: trading
+    rules:
+      - alert: ReconcilerPollStale
+        expr: time() - reconciler_last_poll_timestamp_seconds > 180
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "bot-engine has not reconciled orders for 3 minutes"
+          runbook: "docs/runbooks/PAPER_TRACK_RECORD.md#alerts"
+
+      - alert: TradeStreamDown
+        expr: reconciler_trade_stream_up == 0
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Broker trade-update stream down for 10 minutes (polling still reconciles every 30s)"
+          runbook: "docs/runbooks/PAPER_TRACK_RECORD.md#alerts"
+
+      - alert: OrderNeverReachedBroker
+        expr: increase(reconciler_orders_reconciled_total{source="not_placed"}[1h]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "An approved order was closed because the broker never received it"
+          runbook: "docs/runbooks/PAPER_TRACK_RECORD.md#alerts"
+
+      - alert: BrokerRejectedIntent
+        expr: sum(increase(order_intent_transitions_total{status="rejected",rejection_code="broker_rejected"}[1h])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "The broker rejected an approved intent"
+          runbook: "docs/runbooks/PAPER_TRACK_RECORD.md#alerts"
+
+      - alert: RiskRejectionsHigh
+        expr: sum(increase(order_intent_transitions_total{status="rejected",rejection_code="risk_failed"}[1h])) > 5
+        labels: {severity: info}
+        annotations:
+          summary: "More than 5 intents failed risk checks in an hour; see risk_check_failures_total by check"
+          runbook: "docs/runbooks/PAPER_TRACK_RECORD.md#alerts"

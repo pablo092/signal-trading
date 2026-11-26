@@ -230,12 +230,4 @@ func TestIntentHTTP_ScopesAreEnforced(t *testing.T) {
 	decodeEnvelope(t, e.do(t, http.MethodPost, "/api/v1/order-intents/"+id+"/reject", readerToken, `{"reason":"x"}`), http.StatusForbidden, "insufficient_scope")
 }
 
-func TestLegacyPlaceRouteIsMarkedDeprecated(t *testing.T) {
-	e := newOrderEnv(t, true)
-	w := e.place(t, humanToken, aaplBody)
-	if w.Header().Get("Deprecation") != "true" || !strings.Contains(w.Header().Get("Link"), "/api/v1/order-intents") {
-		t.Fatalf("headers = %v", w.Header())
-	}
-}
-
 func errUnavailable() error { return fmt.Errorf("fake: %w", ports.ErrUnavailable) }

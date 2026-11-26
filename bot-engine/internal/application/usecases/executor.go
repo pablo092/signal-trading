@@ -13,8 +13,8 @@ import (
 
 // orderExecutor is the single submission path to the broker: it never
 // resubmits blindly, and an unknown outcome is resolved by client order ID
-// (ADR-004, ADR-005 §5.4). Both the legacy order route and approved intents
-// use it.
+// (ADR-004, ADR-005 §5.4). Approved order intents are the only caller (the
+// legacy direct order route was removed in M4).
 type orderExecutor struct {
 	broker ports.BrokerPort
 	orders ports.OrderRepositoryPort

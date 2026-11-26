@@ -29,7 +29,7 @@ func testPool(t *testing.T) *pgxpool.Pool {
 		t.Skip("TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
-	admin, err := Open(ctx, url)
+	admin, err := Open(ctx, url, "")
 	if err != nil {
 		t.Fatal(err)
 	}

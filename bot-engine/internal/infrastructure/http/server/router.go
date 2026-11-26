@@ -44,7 +44,6 @@ type WSServer interface {
 type Deps struct {
 	Config     *config.Config
 	Tokens     *auth.Store
-	PlaceOrder *usecases.PlaceOrderUseCase
 	KillSwitch *usecases.KillSwitchService
 	Intents    *usecases.IntentService
 	Broker     ports.BrokerPort
@@ -58,7 +57,6 @@ func Routes(d Deps) []Route {
 	mode, verified := d.Config.TradingMode()
 	paper := verified && mode == config.TradingModePaper
 
-	orders := httphandlers.NewOrdersHandler(d.PlaceOrder, d.Config.OrderExecutionEnabled, d.Logger)
 	portfolio := httphandlers.NewPortfolioHandler(d.Broker, paper, d.Logger)
 	killSwitch := httphandlers.NewKillSwitchHandler(d.KillSwitch, d.Logger)
 	intents := httphandlers.NewIntentsHandler(d.Intents, d.Logger)
@@ -105,9 +103,7 @@ func Routes(d Deps) []Route {
 		{http.MethodPost, "/api/v1/order-intents/:id/approve", auth.ScopeIntentApprove, intents.Approve},
 		{http.MethodPost, "/api/v1/order-intents/:id/reject", auth.ScopeIntentApprove, intents.Reject},
 		{http.MethodPost, "/api/v1/order-intents/:id/cancel", auth.ScopeIntentCreate, intents.Cancel},
-
-		// Write (deprecated, human-only legacy scope; also gated by ORDER_EXECUTION_ENABLED).
-		{http.MethodPost, "/api/v1/orders/place", auth.ScopeOrdersPlaceLegacy, orders.PlaceOrder},
+		// POST /api/v1/orders/place was removed in M4: orders only go through intents.
 	}
 }
 

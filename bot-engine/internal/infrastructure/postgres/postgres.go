@@ -22,13 +22,19 @@ var migrationFiles embed.FS
 // migrationLockID serializes concurrent migrators (pg_advisory_lock key).
 const migrationLockID = 4_210_014
 
-// Open connects to url and checks the connection within 10 s.
-func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
+// Open connects to url and checks the connection within 10 s. A non-empty
+// schema becomes the only search_path entry and is created if missing, so
+// every table, function and schema_migrations row lives there (DATABASE_SCHEMA).
+// The caller validates schema (config.Validate); it is quoted here regardless.
+func Open(ctx context.Context, url, schema string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: invalid DATABASE_URL: %w", redact(err))
 	}
 	cfg.MaxConns = 5
+	if schema != "" {
+		cfg.ConnConfig.RuntimeParams["search_path"] = pgx.Identifier{schema}.Sanitize()
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
@@ -38,6 +44,12 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("postgres: ping: %w", redact(err))
+	}
+	if schema != "" {
+		if _, err := pool.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+pgx.Identifier{schema}.Sanitize()); err != nil {
+			pool.Close()
+			return nil, fmt.Errorf("postgres: create schema: %w", redact(err))
+		}
 	}
 	return pool, nil
 }

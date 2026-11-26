@@ -4,6 +4,9 @@ global:
   external_labels:
     project: "trading-bot"
 
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
 # ── Alerting (optional — add Alertmanager later) ─────────────────────────────
 # alerting:
 #   alertmanagers:

@@ -30,9 +30,9 @@ const (
 	ScopeIntentCreate    = "intent:create"
 	ScopeIntentApprove   = "intent:approve"
 	ScopeAdminKillswitch = "admin:killswitch"
-	// ScopeOrdersPlaceLegacy guards the deprecated direct /orders/place route
-	// (ADR-005: deprecated by order intents in M3, removed in a later release).
-	// It is human-only.
+	// ScopeOrdersPlaceLegacy guarded POST /orders/place, removed in M4. It
+	// grants no route now but stays a known (human-only) scope, so existing
+	// token tables that still list it keep loading instead of failing startup.
 	ScopeOrdersPlaceLegacy = "orders:place-legacy"
 )
 
