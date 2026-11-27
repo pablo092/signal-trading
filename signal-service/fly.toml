@@ -26,9 +26,9 @@ primary_region = "iad"    # us-east — close to Alpaca servers
 [http_service]
   internal_port        = 8000
   force_https          = true    # public traffic; Flycast (private) stays plain http
-  auto_stop_machines   = "stop"  # sleeps when idle; any request wakes it (cold start ~seconds)
+  auto_stop_machines   = "off"   # always on: no cold start on the web demo's first signal
   auto_start_machines  = true
-  min_machines_running = 0
+  min_machines_running = 1
 
   [[http_service.checks]]
     interval     = "15s"

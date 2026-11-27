@@ -59,6 +59,12 @@ type Config struct {
 	// they still need a token.
 	WSAllowedOrigins []string
 
+	// CORSAllowedOrigins lets these browser origins call the REST API
+	// (CORS_ALLOWED_ORIGINS, comma-separated, exact match). Empty = none.
+	// Meant for a local app build against a deployed engine; the token
+	// still comes from that build, never from a public site.
+	CORSAllowedOrigins []string
+
 	// Risk holds the order-intent settings (ADR-005 §5.3–5.5, M3).
 	Risk RiskConfig
 
@@ -105,6 +111,7 @@ func Load() (*Config, error) {
 		DatabaseSchema:        strings.TrimSpace(os.Getenv("DATABASE_SCHEMA")),
 		KillSwitchForced:      killSwitch,
 		WSAllowedOrigins:      splitList(os.Getenv("WS_ALLOWED_ORIGINS")),
+		CORSAllowedOrigins:    splitList(os.Getenv("CORS_ALLOWED_ORIGINS")),
 	}
 
 	if cfg.AlpacaAPIKey == "" {
@@ -145,6 +152,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("ALPACA_BASE_URL must not contain credentials")
 	}
 	if err := c.validateDatabase(); err != nil {
+		return err
+	}
+	if err := validateOrigins("CORS_ALLOWED_ORIGINS", c.CORSAllowedOrigins); err != nil {
 		return err
 	}
 
@@ -279,6 +289,20 @@ func upper(in []string) []string {
 }
 
 // splitList parses a comma-separated list, dropping empty items.
+// validateOrigins accepts only exact browser origins (scheme://host[:port]):
+// no wildcard, path, query or credentials.
+func validateOrigins(name string, origins []string) error {
+	for _, o := range origins {
+		u, err := url.Parse(o)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+			strings.Contains(o, "*") || u.User != nil || (u.Path != "" && u.Path != "/") ||
+			u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("%s: %q is not an origin like https://app.example.com or http://localhost:5000", name, o)
+		}
+	}
+	return nil
+}
+
 func splitList(v string) []string {
 	var out []string
 	for _, item := range strings.Split(v, ",") {

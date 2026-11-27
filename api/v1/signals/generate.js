@@ -8,12 +8,27 @@ const SIGNAL_SERVICE_URL =
 const SYMBOL_RE = /^[A-Z]{1,10}$/;
 const STRATEGY_RE = /^[a-z][a-z0-9_]{0,31}$/;
 const TIMEFRAMES = new Set(["1Min", "5Min", "15Min", "30Min", "1Hour", "4Hour", "1Day"]);
+// Exact browser origins allowed to call this proxy cross-origin: the local demo app
+// (docs/runbooks/DEMO.md). No wildcard, no credentials.
+const CORS_ORIGINS = new Set(["http://localhost:5000"]);
 
 module.exports = async function handler(req, res) {
   // Correlation ID (BL-20): forwarded to signal-service and returned to the browser.
   const requestId = `vercel-${crypto.randomUUID()}`;
   res.setHeader("X-Request-ID", requestId);
   res.setHeader("Cache-Control", "no-store");
+  const origin = req.headers.origin;
+  if (origin && CORS_ORIGINS.has(origin)) {
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Expose-Headers", "X-Request-ID");
+    if (req.method === "OPTIONS") {
+      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Request-ID");
+      res.setHeader("Access-Control-Max-Age", "600");
+      return res.status(204).end();
+    }
+  }
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "method_not_allowed" });
