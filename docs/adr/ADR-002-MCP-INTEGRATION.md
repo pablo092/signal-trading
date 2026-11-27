@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **Proposed** |
+| Status | **Accepted** (2026-11-27; implemented in M1, M3) |
 | Date | 2026-11-24 |
 | Deciders | Repository owner |
 | Related | ADR-003, ADR-005, TARGET_ARCHITECTURE §4 |
@@ -26,7 +26,7 @@ The goal of the Agent Platform is to let AI agents (Claude, Codex, IDE assistant
 
 Implementation language for A: Python (official `mcp` SDK, same stack as signal-service), TypeScript (reference SDK), or Go (community/official Go SDK).
 
-## Decision (proposed)
+## Decision
 **Option A in Python**, with this scope:
 - **M1 transport: STDIO only.** The gateway runs as a local subprocess of the MCP client and calls services on `localhost` with a service token.
 - **Later: Streamable HTTP**, only after ADR-003 OAuth 2.1/OIDC is implemented. No remote transport without authentication.

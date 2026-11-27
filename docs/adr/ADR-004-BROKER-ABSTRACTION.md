@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **Proposed** |
+| Status | **Accepted** (2026-11-27; implemented in M2) |
 | Date | 2026-11-24 |
 | Deciders | Repository owner |
 | Related | TD-02, TD-06, TD-21, ADR-005 |
@@ -25,7 +25,7 @@ Define the broker interface needed to run Alpaca safely and to support tests, dr
 2. **Adopt a third-party multi-broker library.**
 3. **A separate broker-gateway microservice.**
 
-## Decision (proposed)
+## Decision
 Option 1. Define `BrokerPort` v2 in bot-engine:
 
 ```go

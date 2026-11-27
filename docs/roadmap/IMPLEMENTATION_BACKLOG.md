@@ -59,7 +59,7 @@ Exit criteria:
 | BL-33 ✅ | Trading metrics (intent transitions, risk failures, fills, reconciler health) and Prometheus alert rules | ADR-006 §6.4 | S | BL-23 |
 | BL-34 ✅ | ADR-006 (paper track record: phases, entry gate, stop rules) and runbooks PAPER_TRACK_RECORD.md, SUPABASE.md | — | S | — |
 | BL-35 ✅ | Owner: Supabase project and Fly secrets, accept ADR-006, pass the phase-1 entry checklist. Done 2026-11-26: persistence survives a restart, `owner` token is the only `intent:approve` holder, kill-switch drill passed, alerts run in Grafana Cloud | ADR-006 | S | BL-31, BL-34 |
-| BL-36 | Run the checks never run so far: Go `-race`, `promtool check rules`, Dart tests, Postgres schema test, K8s dry-run (blocked by the GitHub Actions billing lock and Docker Desktop locally) | — | S | — |
+| BL-36 | Run the checks never run so far: Go `-race`, `promtool check rules`, Postgres schema test, K8s dry-run (blocked by the GitHub Actions billing lock and Docker Desktop locally). Dart done 2026-11-27 (PR #23): stale tests fixed, `flutter test` 65 passed with Flutter 3.41.9 | — | S | — |
 
 ## Paper phase 1 (ADR-006)
 
