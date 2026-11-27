@@ -20,7 +20,8 @@ Set with `flyctl secrets import -a <app>` from stdin; never commit or print valu
 | `SIGNAL_SERVICE_TOKEN` | | yes |
 
 Token table entries in production: `operator` (human; `market:read`, `portfolio:read`),
-`bot-engine` (service; `market:read`), `vercel-demo` (service; `market:read`).
+`bot-engine` (service; `market:read`), `vercel-demo` (service; `market:read`, plus `portfolio:read` in the
+bot-engine table for the web demo's read-only portfolio summary).
 Since 2026-11-26 the bot-engine table also has `owner` (human; `portfolio:read`, `intent:create`, `intent:approve`,
 `admin:killswitch`; held only by the owner, ADR-006) and gives `operator` `intent:create` and
 `admin:killswitch` (never `intent:approve`). signal-service keeps the three-entry table.

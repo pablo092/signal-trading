@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **Proposed** |
+| Status | **Accepted** (2026-11-27; implemented in M1–M4) |
 | Date | 2026-11-24 |
 | Deciders | Repository owner |
 | Related | SEC-01, SEC-05, SEC-06, SEC-09, ADR-002, ADR-005 |
@@ -19,7 +19,7 @@ Define identity, authentication, authorization, permissions, and audit requireme
 3. **OAuth 2.1 / OIDC** with an external IdP, as the MCP authorization spec requires for remote HTTP transports.
 4. **mTLS** between services.
 
-## Decision (proposed)
+## Decision
 Phase the controls with the transport:
 
 | Phase | Caller | Mechanism |

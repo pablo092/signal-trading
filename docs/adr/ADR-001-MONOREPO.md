@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **Proposed** |
+| Status | **Accepted** (2026-11-27; implemented in M1–M2) |
 | Date | 2026-11-24 |
 | Deciders | Repository owner |
 | Related | TD-09, TD-15, ADR-002 |
@@ -18,7 +18,7 @@ Should the project stay a monorepo as the Agent Platform is added, or split per 
 2. **Polyrepo**: one repository per service plus an infra repository.
 3. **Hybrid**: backend monorepo with the Flutter app in a separate repository.
 
-## Decision (proposed)
+## Decision
 Option 1: keep the monorepo, with these conventions:
 - One top-level directory per deployable. Each owns its Dockerfile, dependency manifest, and tests.
 - Cross-service contracts live in a new `contracts/` directory (OpenAPI for REST, JSON Schema/AsyncAPI for WS events). Each service tests against them (TD-12, TD-23).
