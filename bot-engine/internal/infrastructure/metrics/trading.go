@@ -24,6 +24,8 @@ type Trading struct {
 	streamUp          prometheus.Gauge
 	streamReconnects  prometheus.Counter
 	lastPoll          prometheus.Gauge
+	opportunities     prometheus.Counter
+	lastScan          prometheus.Gauge
 }
 
 // NewTrading registers the trading metrics on reg.
@@ -57,8 +59,16 @@ func NewTrading(reg prometheus.Registerer) *Trading {
 			Name: "reconciler_last_poll_timestamp_seconds",
 			Help: "Unix time of the last completed reconciliation poll.",
 		}),
+		opportunities: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "scanner_opportunities_total",
+			Help: "Order intents the market scanner proposed that passed risk and wait for approval.",
+		}),
+		lastScan: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "scanner_last_scan_timestamp_seconds",
+			Help: "Unix time of the last market scan (including scans skipped because the market is closed).",
+		}),
 	}
-	reg.MustRegister(m.intentTransitions, m.riskFailures, m.ordersFilled, m.reconciled, m.streamUp, m.streamReconnects, m.lastPoll)
+	reg.MustRegister(m.intentTransitions, m.riskFailures, m.ordersFilled, m.reconciled, m.streamUp, m.streamReconnects, m.lastPoll, m.opportunities, m.lastScan)
 	// Pre-create the series dashboards and alerts read, so they exist at 0.
 	for _, st := range entities.IntentStatuses {
 		if st != entities.IntentRejected {
@@ -111,4 +121,13 @@ func (m *Trading) Reconciled(source string) { m.reconciled.WithLabelValues(sourc
 // Polled implements usecases.ReconcilerObserver.
 func (m *Trading) Polled(at time.Time) { m.lastPoll.Set(float64(at.Unix())) }
 
-var _ usecases.ReconcilerObserver = (*Trading)(nil)
+// Scanned implements usecases.ScannerObserver.
+func (m *Trading) Scanned(at time.Time) { m.lastScan.Set(float64(at.Unix())) }
+
+// OpportunityFound implements usecases.ScannerObserver.
+func (m *Trading) OpportunityFound() { m.opportunities.Inc() }
+
+var (
+	_ usecases.ReconcilerObserver = (*Trading)(nil)
+	_ usecases.ScannerObserver    = (*Trading)(nil)
+)

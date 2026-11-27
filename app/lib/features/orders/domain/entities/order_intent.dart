@@ -62,12 +62,17 @@ class IntentSignal extends Equatable {
   final double price;
   final DateTime generatedAt;
 
+  /// The strategy's explanation (e.g. "RSI=27.9, oversold"); null on intents
+  /// created before the engine recorded it.
+  final String? reason;
+
   const IntentSignal({
     required this.id,
     required this.direction,
     required this.confidence,
     required this.price,
     required this.generatedAt,
+    this.reason,
   });
 
   factory IntentSignal.fromJson(Map<String, dynamic> json) => IntentSignal(
@@ -78,10 +83,12 @@ class IntentSignal extends Equatable {
         confidence: _num(json['confidence']),
         price: _num(json['price']),
         generatedAt: DateTime.parse(json['generated_at'] as String),
+        reason: json['reason'] as String?,
       );
 
   @override
-  List<Object?> get props => [id, direction, confidence, price, generatedAt];
+  List<Object?> get props =>
+      [id, direction, confidence, price, generatedAt, reason];
 }
 
 /// One risk check result (ADR-005 §5.5).
@@ -253,6 +260,9 @@ class OrderIntent extends Equatable {
   }
 
   bool get isPendingApproval => status == IntentStatus.pendingApproval;
+
+  /// True when the engine's market scanner proposed it (not a person or agent).
+  bool get fromScanner => createdBy.id == 'scanner' && createdBy.type == 'system';
 
   @override
   List<Object?> get props => [

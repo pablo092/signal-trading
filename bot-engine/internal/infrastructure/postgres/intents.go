@@ -157,6 +157,7 @@ type signalDoc struct {
 	Confidence  float64   `json:"confidence"`
 	Price       string    `json:"price"`
 	GeneratedAt time.Time `json:"generated_at"`
+	Reason      string    `json:"reason,omitempty"`
 }
 
 func encodeIntent(i *entities.OrderIntent) ([]byte, error) {
@@ -164,7 +165,7 @@ func encodeIntent(i *entities.OrderIntent) ([]byte, error) {
 		ID: i.ID, Status: string(i.Status), Symbol: i.Symbol, Strategy: i.Strategy, Side: string(i.Side),
 		Qty: i.Qty.String(), EstimatedNotional: i.EstimatedNotional.String(),
 		Signal: signalDoc{ID: i.Signal.ID, Direction: i.Signal.Direction, Confidence: i.Signal.Confidence,
-			Price: i.Signal.Price.String(), GeneratedAt: i.Signal.GeneratedAt},
+			Price: i.Signal.Price.String(), GeneratedAt: i.Signal.GeneratedAt, Reason: i.Signal.Reason},
 		CreatedBy: i.CreatedBy, IdempotencyKey: i.IdempotencyKey, RequestHash: i.RequestHash,
 		CreatedAt: i.CreatedAt, UpdatedAt: i.UpdatedAt, ExpiresAt: i.ExpiresAt,
 		DecidedBy: i.DecidedBy, DecidedAt: i.DecidedAt, DecisionReason: i.DecisionReason,
@@ -203,7 +204,7 @@ func decodeIntent(b []byte) (*entities.OrderIntent, error) {
 		ID: d.ID, Status: entities.IntentStatus(d.Status), Symbol: d.Symbol, Strategy: d.Strategy,
 		Side: entities.OrderSide(d.Side), Qty: qty, EstimatedNotional: notional,
 		Signal: entities.SignalSnapshot{ID: d.Signal.ID, Direction: d.Signal.Direction, Confidence: d.Signal.Confidence,
-			Price: price, GeneratedAt: d.Signal.GeneratedAt},
+			Price: price, GeneratedAt: d.Signal.GeneratedAt, Reason: d.Signal.Reason},
 		CreatedBy: d.CreatedBy, IdempotencyKey: d.IdempotencyKey, RequestHash: d.RequestHash,
 		CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt, ExpiresAt: d.ExpiresAt,
 		DecidedBy: d.DecidedBy, DecidedAt: d.DecidedAt, DecisionReason: d.DecisionReason,

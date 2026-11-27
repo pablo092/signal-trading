@@ -60,6 +60,8 @@ To revoke the demo: remove the `vercel-demo` entry from `AUTH_TOKENS` on both ap
 | `RISK_MAX_ORDER_NOTIONAL` | unset ($1000) | absolute cap per order, on top of 5 % of equity |
 | `RISK_SYMBOL_ALLOWLIST` | unset (`SPY,QQQ,AAPL,MSFT`) | set-but-empty refuses every symbol |
 | `INTENT_RATE_LIMIT_PER_HOUR` | unset (10) | per actor, in memory |
+| `SCANNER_ENABLED` | `true` (since the market scanner, [MARKET_SCANNER.md](MARKET_SCANNER.md)) | every 5 minutes in market hours, proposes intents for actionable signals; never approves |
+| `SCANNER_INTERVAL` | unset (5m) | time between scans |
 
 Intents live in memory without `DATABASE_URL` and are lost on restart. Enabling execution is a
 separate, explicit decision: see [ORDER_INTENTS.md](ORDER_INTENTS.md).

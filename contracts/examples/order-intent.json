@@ -11,7 +11,8 @@
     "direction": "BUY",
     "confidence": 0.78,
     "price": 189.5,
-    "generated_at": "2026-11-25T14:29:58Z"
+    "generated_at": "2026-11-25T14:29:58Z",
+    "reason": "RSI=27.9, oversold"
   },
   "created_by": {"id": "mcp-gateway", "type": "agent"},
   "created_at": "2026-11-25T14:30:00Z",

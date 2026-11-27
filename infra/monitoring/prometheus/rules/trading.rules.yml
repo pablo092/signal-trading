@@ -39,3 +39,19 @@ groups:
         annotations:
           summary: "More than 5 intents failed risk checks in an hour; see risk_check_failures_total by check"
           runbook: "docs/runbooks/PAPER_TRACK_RECORD.md#alerts"
+
+      # Market scanner (SCANNER_ENABLED): it proposes, the owner approves.
+      - alert: TradeOpportunity
+        expr: increase(scanner_opportunities_total[5m]) > 0
+        labels: {severity: info}
+        annotations:
+          summary: "The market scanner proposed a trade that passed every risk check: open the app (Approvals) to approve or reject it before it expires"
+          runbook: "docs/runbooks/MARKET_SCANNER.md"
+
+      - alert: ScannerStale
+        expr: scanner_last_scan_timestamp_seconds > 0 and time() - scanner_last_scan_timestamp_seconds > 900
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "The market scanner has not run for 15 minutes"
+          runbook: "docs/runbooks/MARKET_SCANNER.md"

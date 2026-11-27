@@ -1,7 +1,9 @@
 # Trading Bot app (Flutter)
 
 Operator UI for signal-trading: market signals, portfolio, order intents and their human
-approval. One codebase serves two builds:
+approval. A local build opens on **Opportunities**: the trades the engine's market scanner
+found, each with what to do, why, the risk checks and Approve / Reject
+([MARKET_SCANNER.md](../docs/runbooks/MARKET_SCANNER.md)). One codebase serves two builds:
 
 | Build | Where | Engine access |
 |---|---|---|
@@ -19,7 +21,7 @@ lib/
   features/
     signals/   generate and watch signals (BLoC, clean layers)
     portfolio/ equity and positions
-    orders/    order intents: propose, list, approve/reject (BL-25)
+    orders/    opportunities, order intents: propose, list, approve/reject (BL-25)
     dashboard/ main page and tabs
   shared/      theme and widgets
 test/          BLoC, domain, engine API, widget and contract tests
@@ -55,8 +57,8 @@ Against the deployed engine on Fly, follow [DEMO.md](../docs/runbooks/DEMO.md): 
 without leaving it in the shell history.
 
 What the token allows depends on its scopes ([SERVICE_TOKENS.md](../docs/runbooks/SERVICE_TOKENS.md)):
-`portfolio:read` for the Portfolio tab, `intent:create` for *Propose trade*, and a **human**
-token with `intent:approve` for Approve/Reject. Approval also needs `ORDER_EXECUTION_ENABLED=true`
+`portfolio:read` for the Portfolio tab, `intent:create` for *Propose trade* (History tab), and a
+**human** token with `intent:approve` for Approve/Reject on Opportunities. Approval also needs `ORDER_EXECUTION_ENABLED=true`
 on the engine; otherwise it answers `execution_disabled`
 ([ORDER_INTENTS.md](../docs/runbooks/ORDER_INTENTS.md)).
 

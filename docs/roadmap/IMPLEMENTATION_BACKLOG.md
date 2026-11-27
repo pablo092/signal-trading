@@ -65,6 +65,7 @@ Exit criteria:
 
 | ID | Item | Fixes | Effort | Depends on |
 |---|---|---|---|---|
+| BL-38 ✅ | Market scanner: the engine proposes intents for actionable signals every 5 min in market hours (never approves); signal reason on intents; app home becomes *Opportunities* with email (Grafana `TradeOpportunity`) and browser notifications | ADR-005 §5.3 | M | BL-37 |
 | BL-37 (started 2026-11-27) | Owner: record the decision in the track-record log, set `ORDER_EXECUTION_ENABLED=true` on paper, run the window (≥ 20 trading days, ≥ 30 fills, weekly review per PAPER_TRACK_RECORD.md), write the track-record summary | ADR-006 §6.2–6.5 | L | BL-35 |
 
 ## Later / requires new ADR

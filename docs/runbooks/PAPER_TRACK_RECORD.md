@@ -38,6 +38,8 @@ All on bot-engine `GET /metrics`. Labels are bounded: no symbols, actors or IDs.
 | `reconciler_trade_stream_disconnects_total` | stream reconnects |
 | `reconciler_last_poll_timestamp_seconds` | last completed reconciliation poll |
 | `bot_engine_kill_switch_engaged` | 1 while trading is halted |
+| `scanner_opportunities_total` | market-scanner proposals that passed risk ([MARKET_SCANNER.md](MARKET_SCANNER.md)) |
+| `scanner_last_scan_timestamp_seconds` | last market scan |
 
 ## Alerts
 
@@ -48,6 +50,8 @@ All on bot-engine `GET /metrics`. Labels are bounded: no symbols, actors or IDs.
 | `OrderNeverReachedBroker` | warning | An approved order was closed as never placed (unknown submit outcome, not at the broker). Review the intent and the audit trail; re-propose if still wanted |
 | `BrokerRejectedIntent` | warning | Alpaca refused an approved order (e.g. buying power). Check the account |
 | `RiskRejectionsHigh` | info | Many proposals fail risk. Look at `risk_check_failures_total` by `check` |
+| `TradeOpportunity` | info | The market scanner proposed a trade: approve or reject it in the app before it expires ([MARKET_SCANNER.md](MARKET_SCANNER.md)) |
+| `ScannerStale` | warning | No market scan for 15 minutes. Check `flyctl logs` for `scanner.` lines |
 | `EngineMetricsMissing` | critical | Grafana only: no engine metrics for 5 minutes (engine down or not scraped). Check `flyctl status`; treat like `ReconcilerPollStale` |
 
 ### Where the alerts run (Fly)

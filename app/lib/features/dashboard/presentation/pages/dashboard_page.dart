@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -10,6 +12,7 @@ import '../../../../shared/theme/trading_theme.dart';
 import '../../../../shared/widgets/trading_widgets.dart';
 import '../../../orders/presentation/bloc/intents_bloc.dart';
 import '../../../orders/presentation/pages/intents_tabs.dart';
+import '../../../orders/presentation/pages/opportunities_tab.dart';
 import '../../../orders/presentation/widgets/intent_widgets.dart';
 import '../../../portfolio/data/portfolio_api.dart';
 import '../../../signals/domain/entities/signal_entity.dart';
@@ -27,7 +30,19 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   String _selectedSymbol = 'AAPL';
   String _selectedStrategy = 'rsi';
-  int _tab = 0;
+
+  // Tabs: Opportunities, Market, Signals, Portfolio, History. A build without
+  // an engine token (the public web demo) opens on Market.
+  static const int _tabOpportunities = 0;
+  static const int _tabMarket = 1;
+  static const int _tabSignals = 2;
+  static const int _tabPortfolio = 3;
+  static const int _tabHistory = 4;
+  int _tab = AppConfig.engineEnabled ? _tabOpportunities : _tabMarket;
+
+  /// Reloads intents while the app is open, so new opportunities appear (and
+  /// notify) even without the live feed.
+  Timer? _intentsPoll;
 
   /// null when no portfolio source is available (no token, not the web demo):
   /// the portfolio sections then show the "connect a token" state.
@@ -48,7 +63,16 @@ class _DashboardPageState extends State<DashboardPage> {
       final intents = context.read<IntentsBloc>();
       intents.add(const IntentsRequested());
       if (AppConfig.liveFeedEnabled) intents.add(const IntentsWatchStarted());
+      _intentsPoll = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (mounted) intents.add(const IntentsRequested());
+      });
     }
+  }
+
+  @override
+  void dispose() {
+    _intentsPoll?.cancel();
+    super.dispose();
   }
 
   Future<PortfolioSnapshot>? _loadPortfolio() {
@@ -73,7 +97,7 @@ class _DashboardPageState extends State<DashboardPage> {
           symbol: signal.symbol,
           strategy: _selectedStrategy,
         ));
-    setState(() => _tab = 3);
+    setState(() => _tab = _tabHistory);
   }
 
   Future<void> _refreshAll() async {
@@ -104,7 +128,7 @@ class _DashboardPageState extends State<DashboardPage> {
       backgroundColor: TradingTheme.primary,
       appBar: _buildAppBar(),
       body: AppConfig.engineEnabled
-          ? IntentNoticeListener(child: content)
+          ? IntentNoticeListener(child: OpportunityNotifier(child: content))
           : content,
       bottomNavigationBar: NavigationBar(
         backgroundColor: TradingTheme.surface,
@@ -113,9 +137,14 @@ class _DashboardPageState extends State<DashboardPage> {
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
           NavigationDestination(
+            icon: _OpportunitiesIcon(selected: false),
+            selectedIcon: _OpportunitiesIcon(selected: true),
+            label: 'Opportunities',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard_rounded),
-            label: 'Dashboard',
+            label: 'Market',
           ),
           NavigationDestination(
             icon: Icon(Icons.show_chart_outlined),
@@ -128,14 +157,9 @@ class _DashboardPageState extends State<DashboardPage> {
             label: 'Portfolio',
           ),
           NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long_rounded),
-            label: 'Orders',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.verified_user_outlined),
-            selectedIcon: Icon(Icons.verified_user_rounded),
-            label: 'Approvals',
+            icon: Icon(Icons.history_rounded),
+            selectedIcon: Icon(Icons.history_rounded),
+            label: 'History',
           ),
         ],
       ),
@@ -144,7 +168,12 @@ class _DashboardPageState extends State<DashboardPage> {
 
   List<Widget> _buildTab() {
     switch (_tab) {
-      case 1:
+      case _tabOpportunities:
+        if (!AppConfig.engineEnabled) {
+          return const [EngineTokenRequiredCard(feature: 'Opportunities')];
+        }
+        return const [OpportunitiesTab()];
+      case _tabSignals:
         return [
           _controls(),
           const SizedBox(height: 12),
@@ -152,13 +181,13 @@ class _DashboardPageState extends State<DashboardPage> {
           const SizedBox(height: 16),
           const _SignalHistorySection(),
         ];
-      case 2:
+      case _tabPortfolio:
         return [
           _PortfolioSummarySection(future: _portfolio, onRetry: _refreshPortfolio),
           const SizedBox(height: 16),
           _PositionsSection(future: _portfolio),
         ];
-      case 3:
+      case _tabHistory:
         if (!AppConfig.engineEnabled) {
           return const [
             EngineTokenRequiredCard(feature: 'Orders and trade proposals'),
@@ -169,12 +198,7 @@ class _DashboardPageState extends State<DashboardPage> {
           const SizedBox(height: 12),
           OrdersTab(symbol: _selectedSymbol, strategy: _selectedStrategy),
         ];
-      case 4:
-        if (!AppConfig.engineEnabled) {
-          return const [EngineTokenRequiredCard(feature: 'Approvals')];
-        }
-        return const [ApprovalsTab()];
-      default:
+      default: // _tabMarket
         return [
           const _DemoBanner(),
           _PortfolioSummarySection(future: _portfolio, onRetry: _refreshPortfolio),
@@ -754,6 +778,29 @@ class _RecentSignalRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Opportunities tab icon: badge with the pending count ─────
+
+class _OpportunitiesIcon extends StatelessWidget {
+  final bool selected;
+  const _OpportunitiesIcon({required this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = Icon(
+        selected ? Icons.lightbulb_rounded : Icons.lightbulb_outline_rounded);
+    // The intents bloc exists only in a build with an engine token.
+    if (!AppConfig.engineEnabled) return icon;
+    return BlocSelector<IntentsBloc, IntentsState, int>(
+      selector: (state) => state.pending.length,
+      builder: (context, count) => Badge(
+        isLabelVisible: count > 0,
+        label: Text('$count'),
+        child: icon,
       ),
     );
   }

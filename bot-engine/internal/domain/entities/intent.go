@@ -118,6 +118,7 @@ type SignalSnapshot struct {
 	Confidence  float64
 	Price       decimal.Decimal
 	GeneratedAt time.Time
+	Reason      string // the strategy's explanation, e.g. "RSI=27.9, oversold"
 }
 
 // OrderIntent is a proposed order. Only an approved intent is ever submitted,

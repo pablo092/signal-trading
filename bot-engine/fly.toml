@@ -22,6 +22,9 @@ primary_region = "iad"    # same region as signal-service
   # ADR-006 phase 1 (paper execution), started by the owner on 2026-11-27. Set to
   # "false" to go back to phase 0: pending intents stay, approval is refused.
   ORDER_EXECUTION_ENABLED = "true"
+  # Market scanner: every 5 minutes in market hours it proposes intents for actionable
+  # signals (allowlisted symbols and strategies). It never approves; the owner does.
+  SCANNER_ENABLED         = "true"
   ALPACA_BASE_URL         = "https://paper-api.alpaca.markets"
   # Public https address of signal-service (token-authenticated). Flycast over plain
   # http does not work: signal-service's force_https redirects it to https on the

@@ -103,6 +103,10 @@
         "generated_at": {
           "type": "string",
           "format": "date-time"
+        },
+        "reason": {
+          "type": "string",
+          "description": "The strategy's explanation of the signal (absent on intents created before it was recorded)."
         }
       }
     },
