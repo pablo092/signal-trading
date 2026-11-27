@@ -33,7 +33,7 @@ Status: **Implemented** / **Partial** / **Absent** / **Proposed** (target only).
 | TimescaleDB | timescale/timescaledb:latest-pg16 | Deployed, unused | none | 5433 |
 | Redis | redis:7-alpine | Deployed, unused | none | 6379 |
 | RabbitMQ | rabbitmq:3-management-alpine | Deployed, unused | none | 15672 (UI) |
-| Prometheus | prom/prometheus:v2.52.0 | Implemented | scrapes both services | 9090 |
+| Prometheus | prom/prometheus:v2.55.1 | Implemented | scrapes both services | 9090 |
 | Grafana | grafana/grafana:11.0.0 | Implemented | 1 dashboard | 3000 |
 | Loki | grafana/loki:3.0.0 | Implemented | Promtail | 3100 |
 | Promtail | grafana/promtail:3.0.0 | Implemented | Docker logs | — |
