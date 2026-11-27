@@ -290,7 +290,7 @@ class _DemoBanner extends StatelessWidget {
             child: Text(
               AppConfig.engineEnabled
                   ? 'Paper trading · every trade needs a human approval'
-                  : 'Paper trading demo · order execution disabled',
+                  : 'Paper trading demo · read-only, trades run from the local app',
               style: TradingTheme.caption.copyWith(color: TradingTheme.neutral),
             ),
           ),
