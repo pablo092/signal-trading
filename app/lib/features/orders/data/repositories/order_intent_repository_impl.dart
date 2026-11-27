@@ -22,13 +22,13 @@ class OrderIntentRepositoryImpl implements IOrderIntentRepository {
     } on ApiException catch (e) {
       return Left(e.failure);
     } on TimeoutException {
-      return Left(const TimeoutFailure());
+      return const Left(TimeoutFailure());
     } on FormatException catch (e) {
       return Left(NetworkFailure('Unexpected response: ${e.message}'));
     } on Exception catch (e) {
       return Left(NetworkFailure(e.toString()));
     } on TypeError {
-      return Left(const NetworkFailure('Unexpected response shape'));
+      return const Left(NetworkFailure('Unexpected response shape'));
     }
   }
 

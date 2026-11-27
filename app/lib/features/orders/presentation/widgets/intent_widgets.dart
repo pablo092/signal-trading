@@ -36,7 +36,7 @@ class EngineTokenRequiredCard extends StatelessWidget {
             Text('$feature: connect a token (local only)',
                 style: TradingTheme.titleMedium),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'This needs a bot-engine token, which a public web build must '
               'never hold. Run the app locally with '
               '--dart-define=BOT_ENGINE_TOKEN=<token> (and BOT_ENGINE_URL) to '
@@ -147,7 +147,7 @@ class IntentStatusChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
@@ -241,7 +241,7 @@ class RiskChecksList extends StatelessWidget {
           style: TradingTheme.caption.copyWith(color: headerColor),
         ),
         if (checks.isEmpty && !failedOnly)
-          Text('No individual results reported.', style: TradingTheme.caption),
+          const Text('No individual results reported.', style: TradingTheme.caption),
         ...checks.map(
           (c) => Padding(
             padding: const EdgeInsets.only(top: 4),

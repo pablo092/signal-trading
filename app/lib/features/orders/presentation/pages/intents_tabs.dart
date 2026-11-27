@@ -33,8 +33,8 @@ class OrdersTab extends StatelessWidget {
               proposing: state.proposing,
             ),
             if (last != null) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text('Latest proposal', style: TradingTheme.titleMedium),
               ),
               IntentCard(
@@ -44,8 +44,8 @@ class OrdersTab extends StatelessWidget {
                     : null,
               ),
             ],
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
               child: Text('Recent intents', style: TradingTheme.titleMedium),
             ),
             if (state.load == IntentsLoad.loading && state.recent.isEmpty)
@@ -58,7 +58,7 @@ class OrdersTab extends StatelessWidget {
                     context.read<IntentsBloc>().add(const IntentsRequested()),
               )
             else if (others.isEmpty)
-              Text('No intents yet.', style: TradingTheme.caption),
+              const Text('No intents yet.', style: TradingTheme.caption),
             ...others.map((i) => IntentCard(intent: i, showAllChecks: false)),
           ],
         );
@@ -89,7 +89,7 @@ class _ProposeTradeCard extends StatelessWidget {
             Text('Propose trade: ${symbol.toUpperCase()} · $strategy',
                 style: TradingTheme.titleMedium),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'bot-engine fetches the latest signal, sizes the order and runs '
               'every risk check. Nothing is sent to the broker until a human '
               'approves it (Approvals tab). Paper account only.',
@@ -158,7 +158,7 @@ class ApprovalsTab extends StatelessWidget {
               padding: const EdgeInsets.all(12),
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: TradingTheme.neutral.withOpacity(0.12),
+                color: TradingTheme.neutral.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -202,9 +202,9 @@ class ApprovalsTab extends StatelessWidget {
                     context.read<IntentsBloc>().add(const IntentsRequested()),
               )
             else if (pending.isEmpty)
-              Card(
+              const Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(16),
                   child: Text('Nothing is waiting for approval.',
                       style: TradingTheme.bodyMedium),
                 ),
