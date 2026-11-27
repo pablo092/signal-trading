@@ -65,6 +65,21 @@ A Grafana Cloud stack evaluates the rules every minute and emails the owner:
   plus `EngineMetricsMissing` (`absent_over_time(...[5m])`). `ReconcilerPollStale` also fires on no data.
 - Contact point `owner-email`, the root notification policy's receiver (repeat every 4 h).
 
+**Current status (2026-11-27): the six operational rules are paused.** The owner paused
+`ReconcilerPollStale`, `EngineMetricsMissing`, `TradeStreamDown`, `OrderNeverReachedBroker`,
+`BrokerRejectedIntent` and `RiskRejectionsHigh` in Grafana because they sent too many emails. Only
+`TradeOpportunity` and `ScannerStale` are active. ADR-006 §6.1 item 4 expects alerts the owner sees, so
+while the rules stay paused, the owner checks the **signal-trading — paper ops** dashboard on every
+trading day the scanner proposes or an order is approved. Check that:
+
+- the engine is up;
+- the last reconciliation poll is under 3 minutes old;
+- the trade stream is up;
+- there are no `not_placed` or `broker_rejected` intents.
+
+The stop rules (§6.4) apply exactly as if the alert had fired. To resume a rule: Alerting → Alert rules →
+the rule → *Resume evaluation*. Record pausing and resuming in the track-record log.
+
 `trading.rules.yml` stays the source of truth: when a rule changes there, change it in Grafana too.
 To check it end to end, send a test from the contact point (Alerting → Contact points → Test).
 
