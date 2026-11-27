@@ -117,6 +117,19 @@ func TestReconcilerObserver(t *testing.T) {
 	}
 }
 
+func TestScannerObserver(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewTrading(reg)
+	if value(t, reg, "scanner_opportunities_total") != 0 {
+		t.Fatal("opportunities should start at 0")
+	}
+	m.OpportunityFound()
+	m.Scanned(time.Unix(1_700_000_000, 0))
+	if value(t, reg, "scanner_opportunities_total") != 1 || value(t, reg, "scanner_last_scan_timestamp_seconds") != 1_700_000_000 {
+		t.Fatal("scan not recorded")
+	}
+}
+
 func TestSeriesExistAtZero(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	NewTrading(reg)

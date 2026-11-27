@@ -157,6 +157,7 @@ type IntentSignal struct {
 	Confidence  float64     `json:"confidence"`
 	Price       json.Number `json:"price"`
 	GeneratedAt time.Time   `json:"generated_at"`
+	Reason      string      `json:"reason,omitempty"`
 }
 
 // ActorData identifies who acted.
@@ -197,7 +198,7 @@ func NewIntentData(v usecases.IntentView) IntentData {
 		ID: it.ID.String(), Status: string(it.Status), Symbol: it.Symbol, Strategy: it.Strategy,
 		Qty: num(it.Qty), EstimatedNotional: num(it.EstimatedNotional),
 		Signal: IntentSignal{ID: it.Signal.ID, Direction: it.Signal.Direction, Confidence: it.Signal.Confidence,
-			Price: num(it.Signal.Price), GeneratedAt: it.Signal.GeneratedAt.UTC()},
+			Price: num(it.Signal.Price), GeneratedAt: it.Signal.GeneratedAt.UTC(), Reason: it.Signal.Reason},
 		CreatedBy: ActorData{ID: it.CreatedBy.ID, Type: it.CreatedBy.Type},
 		CreatedAt: it.CreatedAt.UTC(), UpdatedAt: it.UpdatedAt.UTC(), ExpiresAt: it.ExpiresAt.UTC(),
 		DecidedAt: it.DecidedAt,

@@ -68,6 +68,12 @@ type Config struct {
 	// Risk holds the order-intent settings (ADR-005 §5.3–5.5, M3).
 	Risk RiskConfig
 
+	// ScannerEnabled runs the market scanner (SCANNER_ENABLED, default false):
+	// it proposes intents for actionable signals; a human still approves each.
+	ScannerEnabled bool
+	// ScannerInterval is the time between scans (SCANNER_INTERVAL, default 5m, 1m–1h).
+	ScannerInterval time.Duration
+
 	// verified is set by Validate once the paper-mode guard has passed.
 	verified bool
 }
@@ -94,8 +100,19 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	scannerEnabled, err := getEnvBoolStrict("SCANNER_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+	scannerInterval, err := getEnvDuration("SCANNER_INTERVAL", 5*time.Minute, time.Minute, time.Hour)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		Risk:                  risk,
+		ScannerEnabled:        scannerEnabled,
+		ScannerInterval:       scannerInterval,
 		Environment:           getEnv("ENV", "development"),
 		Port:                  getEnvInt("PORT", 8080),
 		PaperTrading:          paper,

@@ -142,7 +142,7 @@ func (s *IntentService) Create(ctx context.Context, in CreateIntentInput) (Creat
 
 	snap := entities.SignalSnapshot{
 		ID: signal.ID, Direction: signal.Direction, Confidence: signal.Confidence,
-		Price: signal.Price, GeneratedAt: signal.GeneratedAt.UTC(),
+		Price: signal.Price, GeneratedAt: signal.GeneratedAt.UTC(), Reason: signal.Reason,
 	}
 	intent, err := entities.NewOrderIntent(symbol, strategy, snap, in.Actor, in.IdempotencyKey, hash, s.now(), s.d.Policy.TTL)
 	if err != nil {

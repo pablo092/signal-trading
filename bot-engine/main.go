@@ -157,6 +157,22 @@ func main() {
 			ExecutionEnabled: cfg.OrderExecutionEnabled,
 		},
 	})
+	var scanner *usecases.Scanner
+	if cfg.ScannerEnabled {
+		scanPolicy := usecases.ScannerPolicy{
+			Interval: cfg.ScannerInterval, Symbols: cfg.Risk.SymbolAllowlist, Strategies: cfg.Risk.StrategyAllowlist,
+			MinConfidence: riskRules.MinConfidence, IgnoreMarketHours: cfg.Risk.AllowExtendedHours,
+		}
+		if err := scanPolicy.Validate(); err != nil {
+			logger.Fatal("scanner.invalid", zap.Error(err))
+		}
+		scanner = usecases.NewScanner(usecases.ScannerDeps{
+			Intents: intentSvc, Signals: signalSvc, Clock: alpacaBroker, KillSwitch: killSwitch,
+			Observer: tradingMetrics, Policy: scanPolicy, Logger: logger,
+		})
+		logger.Info("scanner.ready", zap.Duration("interval", cfg.ScannerInterval),
+			zap.Strings("symbols", scanPolicy.Symbols), zap.Strings("strategies", scanPolicy.Strategies))
+	}
 	reconciler := usecases.NewReconciler(usecases.ReconcilerDeps{
 		Broker: alpacaBroker, Orders: orderRepo, Intents: intentRepo, Audit: auditLog, Publisher: bus, Logger: logger,
 		Observer: tradingMetrics,
@@ -226,6 +242,9 @@ func main() {
 	go hub.Run(ctx)
 	go intentSvc.RunExpiry(ctx, 15*time.Second)
 	go reconciler.Run(ctx) // trade-update stream + polling of open orders (BL-23)
+	if scanner != nil {
+		go scanner.Run(ctx) // market scanner: proposes, never approves
+	}
 
 	go func() {
 		logger.Info("bot_engine.http_listening", zap.Int("port", cfg.Port))

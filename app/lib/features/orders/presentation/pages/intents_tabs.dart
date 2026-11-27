@@ -140,7 +140,7 @@ class _CancelButton extends StatelessWidget {
 class ApprovalsTab extends StatelessWidget {
   const ApprovalsTab({super.key});
 
-  static const String _approvalNote =
+  static const String approvalNote =
       'Approving needs a human token with the intent:approve scope. '
       'Every risk check runs again before submission, and the engine may '
       'have order execution disabled: then approval is refused and nothing '
@@ -169,7 +169,7 @@ class ApprovalsTab extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      _approvalNote,
+                      approvalNote,
                       style: TradingTheme.caption
                           .copyWith(color: TradingTheme.neutral),
                     ),
@@ -212,7 +212,7 @@ class ApprovalsTab extends StatelessWidget {
             ...pending.map(
               (i) => IntentCard(
                 intent: i,
-                actions: _DecisionButtons(
+                actions: IntentDecisionButtons(
                   intent: i,
                   busy: state.busyIds.contains(i.id),
                 ),
@@ -225,10 +225,12 @@ class ApprovalsTab extends StatelessWidget {
   }
 }
 
-class _DecisionButtons extends StatelessWidget {
+/// Reject / Approve for a pending intent, each behind a confirmation dialog.
+class IntentDecisionButtons extends StatelessWidget {
   final OrderIntent intent;
   final bool busy;
-  const _DecisionButtons({required this.intent, required this.busy});
+  const IntentDecisionButtons(
+      {super.key, required this.intent, required this.busy});
 
   String get _summary {
     final side = intent.side?.name.toUpperCase() ?? 'NO TRADE';
@@ -242,7 +244,7 @@ class _DecisionButtons extends StatelessWidget {
       title: 'Approve $_summary?',
       confirmLabel: 'Approve',
       reasonRequired: false,
-      note: '${ApprovalsTab._approvalNote} If the broker outcome is unknown '
+      note: '${ApprovalsTab.approvalNote} If the broker outcome is unknown '
           'the intent stays approved: do not approve again.',
     );
     if (reason == null) return;

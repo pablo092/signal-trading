@@ -95,7 +95,9 @@ void main() {
     expect(i.signal.direction, SignalDirection.buy);
     expect(i.signal.price, 189.5);
     expect(i.signal.confidence, 0.78);
+    expect(i.signal.reason, 'RSI=27.9, oversold');
     expect(i.createdBy, const IntentActor(id: 'mcp-gateway', type: 'agent'));
+    expect(i.fromScanner, isFalse);
     expect(i.expiresAt, DateTime.utc(2026, 11, 25, 14, 35));
     expect(i.expiresAt.isUtc, isTrue);
     expect(i.decidedBy, isNull);
@@ -122,6 +124,7 @@ void main() {
     expect(filled.decidedBy?.type, 'human');
     expect(filled.decidedAt, isNotNull);
     expect(filled.decisionReason, 'looks fine');
+    expect(filled.signal.reason, isNull); // optional: older intents lack it
     expect(filled.risk.stage, 'submission');
     expect(filled.order, isNotNull);
     expect(filled.order!.id, filled.id);

@@ -55,20 +55,24 @@ Never build this for the web host: a `--dart-define` value is readable in the bu
 1. **Signals.** On the web demo, generate a signal for `AAPL` with `rsi`: direction, strength,
    confidence and the reason (e.g. "RSI=58.4, neutral zone").
 2. **Portfolio.** In the local app, the Portfolio tab reads paper equity and positions from the engine.
-3. **Propose.** Orders tab → *Propose trade* `AAPL`, strategy `rsi`. The engine fetches the signal
+3. **Opportunities.** The local app opens on *Opportunities*: trades the market scanner found
+   that passed every risk check, each with what to do (*BUY 3 AAPL*), the amount, the reason and a
+   countdown ([MARKET_SCANNER.md](MARKET_SCANNER.md)). Outside market hours the list is empty and
+   explains when the scanner runs. *Turn on* enables browser notifications; the owner also gets an email.
+4. **Propose by hand.** History tab → *Propose trade* `AAPL`, strategy `rsi`. The engine fetches the signal
    itself and sizes the order; the app never sends a side or quantity. Show the status and the risk
    checks (cap $1000, 5 % of equity, allowlist, market hours, rate limit).
-4. **Decide.** Approvals tab lists `pending_approval` intents. *Reject* with a reason, or *Approve*:
+5. **Decide.** On Opportunities, *Reject* with a reason, or *Approve*:
    the order goes to the paper account and the live feed shows it filling (with execution off,
    approval answers `execution_disabled`).
-5. **Kill switch.** Engage it, show a new proposal refused with `409 kill_switch_engaged`, release
+6. **Kill switch.** Engage it, show a new proposal refused with `409 kill_switch_engaged`, release
    ([KILL_SWITCH.md](KILL_SWITCH.md), owner token).
-6. **Audit trail.** In Supabase:
+7. **Audit trail.** In Supabase:
    `select occurred_at, actor_id, action, result from tradingbot.audit_events order by occurred_at desc limit 20;`
    Every decision is there, append-only (UPDATE and DELETE are refused by triggers).
-7. **Monitoring.** Grafana dashboard: services up, kill switch, trade stream, last reconciliation,
+8. **Monitoring.** Grafana dashboard: services up, kill switch, trade stream, last reconciliation,
    intents by status, rejections by reason. Alert rules in folder `signal-trading` email the owner.
-8. **Agents (optional).** An MCP client using the agent-gateway can list strategies, generate signals
+9. **Agents (optional).** An MCP client using the agent-gateway can list strategies, generate signals
    and propose intents, but has no tool to approve them ([agent-gateway](../../agent-gateway/README.md)).
 
 ## After the demo
