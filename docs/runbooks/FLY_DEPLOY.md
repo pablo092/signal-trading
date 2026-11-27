@@ -6,7 +6,8 @@
 | bot-engine | `trading-bot-engine` (Fly, `iad`) | `https://trading-bot-engine.fly.dev`, token required; always on |
 | Flutter web | Vercel (repo-root `vercel.json`) | public UI; signals via the `api/` proxy |
 
-bot-engine calls signal-service privately over Flycast (`http://trading-bot-signal-service.flycast`).
+bot-engine calls signal-service at its public https URL with its own token. Flycast over plain http
+does not work here: `force_https` redirects it to `https://…flycast`, which has no TLS.
 Order execution is disabled (`ORDER_EXECUTION_ENABLED=false`) and the paper guard is enforced.
 
 ## Secrets
