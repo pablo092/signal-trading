@@ -6,8 +6,8 @@ How to run and review the paper track record. Paper only: nothing here enables l
 
 | Phase | `ORDER_EXECUTION_ENABLED` | What happens |
 |---|---|---|
-| 0, dry run (current on Fly) | `false` | Intents are proposed and risk-checked; approval answers `403 execution_disabled` |
-| 1, paper execution | `true` (paper host only) | The owner approves intents; orders go to the Alpaca paper account |
+| 0, dry run (until 2026-11-27) | `false` | Intents are proposed and risk-checked; approval answers `403 execution_disabled` |
+| 1, paper execution (current on Fly, since 2026-11-27) | `true` (paper host only) | The owner approves intents; orders go to the Alpaca paper account |
 
 ## Entry checklist (phase 0 → 1)
 

@@ -8,7 +8,8 @@
 
 bot-engine calls signal-service at its public https URL with its own token. Flycast over plain http
 does not work here: `force_https` redirects it to `https://…flycast`, which has no TLS.
-Order execution is disabled (`ORDER_EXECUTION_ENABLED=false`) and the paper guard is enforced.
+Order execution is on for ADR-006 phase 1 (`ORDER_EXECUTION_ENABLED=true`, paper only, every order
+approved by the owner) and the paper guard is enforced.
 
 ## Secrets
 
@@ -54,7 +55,7 @@ To revoke the demo: remove the `vercel-demo` entry from `AUTH_TOKENS` on both ap
 
 | Setting | Fly value | Effect |
 |---|---|---|
-| `ORDER_EXECUTION_ENABLED` | `false` | intents can be created and rejected, but **approval is refused** (`execution_disabled`); nothing reaches the broker |
+| `ORDER_EXECUTION_ENABLED` | `true` (since 2026-11-27, ADR-006 phase 1) | an intent the owner approves is submitted to the Alpaca **paper** account; with `false`, approval is refused (`execution_disabled`) |
 | `INTENT_TTL`, `RISK_SIGNAL_MAX_AGE` | unset (5m) | pending intents expire after 5 minutes; signals older than 5 minutes fail `signal_fresh` |
 | `RISK_MAX_ORDER_NOTIONAL` | unset ($1000) | absolute cap per order, on top of 5 % of equity |
 | `RISK_SYMBOL_ALLOWLIST` | unset (`SPY,QQQ,AAPL,MSFT`) | set-but-empty refuses every symbol |

@@ -65,7 +65,7 @@ Exit criteria:
 
 | ID | Item | Fixes | Effort | Depends on |
 |---|---|---|---|---|
-| BL-37 | Owner: record the decision in the track-record log, set `ORDER_EXECUTION_ENABLED=true` on paper, run the window (≥ 20 trading days, ≥ 30 fills, weekly review per PAPER_TRACK_RECORD.md), write the track-record summary | ADR-006 §6.2–6.5 | L | BL-35 |
+| BL-37 (started 2026-11-27) | Owner: record the decision in the track-record log, set `ORDER_EXECUTION_ENABLED=true` on paper, run the window (≥ 20 trading days, ≥ 30 fills, weekly review per PAPER_TRACK_RECORD.md), write the track-record summary | ADR-006 §6.2–6.5 | L | BL-35 |
 
 ## Later / requires new ADR
 

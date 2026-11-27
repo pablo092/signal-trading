@@ -21,9 +21,9 @@ that carries the owner token only on your machine.
 1. **Market hours.** The risk engine refuses intents outside regular US hours
    (09:30–16:00 New York: 11:30–18:00 in Buenos Aires from November to March, 10:30–17:00 the rest of the year). Outside them, a proposal
    is still created and shown as `rejected` with the failed check, which is also worth showing.
-2. **Execution mode.** With `ORDER_EXECUTION_ENABLED=false` (phase 0) approval answers
-   `403 execution_disabled`; reject works. To show a real paper order, the owner starts
-   ADR-006 phase 1 first ([PAPER_TRACK_RECORD.md](PAPER_TRACK_RECORD.md)).
+2. **Execution mode.** Fly runs ADR-006 phase 1: an approved intent becomes a **paper** order and
+   counts toward the track record ([PAPER_TRACK_RECORD.md](PAPER_TRACK_RECORD.md)). Approve only what
+   you would really trade on paper; for a show-only demo, reject instead.
 3. **Flutter SDK 3.41.9** (same as the Vercel build). Check `flutter --version`.
 4. **Health:** `curl https://trading-bot-engine.fly.dev/health/ready` answers `"status":"ready"`.
    signal-service is always on, so the first signal does not wait for a cold start.
@@ -59,8 +59,8 @@ Never build this for the web host: a `--dart-define` value is readable in the bu
    itself and sizes the order; the app never sends a side or quantity. Show the status and the risk
    checks (cap $1000, 5 % of equity, allowlist, market hours, rate limit).
 4. **Decide.** Approvals tab lists `pending_approval` intents. *Reject* with a reason, or *Approve*:
-   phase 0 answers `execution_disabled`; in phase 1 the order goes to the paper account and the
-   live feed shows it filling.
+   the order goes to the paper account and the live feed shows it filling (with execution off,
+   approval answers `execution_disabled`).
 5. **Kill switch.** Engage it, show a new proposal refused with `409 kill_switch_engaged`, release
    ([KILL_SWITCH.md](KILL_SWITCH.md), owner token).
 6. **Audit trail.** In Supabase:
