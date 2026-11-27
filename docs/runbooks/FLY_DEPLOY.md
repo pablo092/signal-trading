@@ -2,7 +2,7 @@
 
 | Component | Where | Exposure |
 |---|---|---|
-| signal-service | `trading-bot-signal-service` (Fly, `iad`) | `https://trading-bot-signal-service.fly.dev`, token required; auto-stops when idle |
+| signal-service | `trading-bot-signal-service` (Fly, `iad`) | `https://trading-bot-signal-service.fly.dev`, token required; always on (one machine) so the web demo has no cold start |
 | bot-engine | `trading-bot-engine` (Fly, `iad`) | `https://trading-bot-engine.fly.dev`, token required; always on |
 | Flutter web | Vercel (repo-root `vercel.json`) | public UI; signals via the `api/` proxy |
 
@@ -21,10 +21,13 @@ Set with `flyctl secrets import -a <app>` from stdin; never commit or print valu
 
 Token table entries in production: `operator` (human; `market:read`, `portfolio:read`),
 `bot-engine` (service; `market:read`), `vercel-demo` (service; `market:read`).
-Since 2026-11-26 the bot-engine table also has `owner` (human; `portfolio:read`, `intent:approve`,
+Since 2026-11-26 the bot-engine table also has `owner` (human; `portfolio:read`, `intent:create`, `intent:approve`,
 `admin:killswitch`; held only by the owner, ADR-006) and gives `operator` `intent:create` and
 `admin:killswitch` (never `intent:approve`). signal-service keeps the three-entry table.
 Plaintext tokens live only in the operator's git-ignored `secrets/fly-tokens.env`.
+
+bot-engine allows browser calls only from `http://localhost:5000` (`CORS_ALLOWED_ORIGINS` and
+`WS_ALLOWED_ORIGINS` in `fly.toml`), for the local demo app ([DEMO.md](DEMO.md)). Every call still needs a token.
 
 ## Web demo
 

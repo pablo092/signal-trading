@@ -117,6 +117,7 @@ func NewRouter(d Deps) *gin.Engine {
 		middleware.StructuredLogger(d.Logger),
 		middleware.Tracing("bot-engine"),
 		middleware.PrometheusMetrics(d.Registry),
+		middleware.CORS(d.Config.CORSAllowedOrigins), // before auth: answers allowed preflights
 	)
 	for _, r := range Routes(d) {
 		handlers := []gin.HandlerFunc{r.Handler}

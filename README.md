@@ -94,6 +94,7 @@ GitHub Actions is currently unavailable (billing), so run them locally before a 
   and an append-only audit trail, applying its migrations on start; without it, they stay in
   memory. Supabase works with a dedicated `DATABASE_SCHEMA`: [docs/runbooks/SUPABASE.md](docs/runbooks/SUPABASE.md).
 - Paper track record (phases, metrics, alerts, stop rules): [docs/runbooks/PAPER_TRACK_RECORD.md](docs/runbooks/PAPER_TRACK_RECORD.md), ADR-006.
+- Demo walkthrough (web signals, local app with intents, Grafana, audit trail): [docs/runbooks/DEMO.md](docs/runbooks/DEMO.md).
 
 ## Safety
 
