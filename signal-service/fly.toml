@@ -1,8 +1,8 @@
 # signal-service — Fly.io deployment config
 #
 # Public over HTTPS, but every /api/v1/* route requires a scoped token (ADR-003).
-# bot-engine reaches it privately over Flycast (http://trading-bot-signal-service.flycast);
-# the Vercel demo proxy (api/ at the repo root) reaches it at https://<app>.fly.dev.
+# bot-engine and the Vercel demo proxy (api/ at the repo root) both reach it at
+# https://<app>.fly.dev with their own tokens (see force_https below).
 # Deploy with: cd signal-service && flyctl deploy
 #
 # Secrets (flyctl secrets set ... — never put real values here):
@@ -25,7 +25,7 @@ primary_region = "iad"    # us-east — close to Alpaca servers
 
 [http_service]
   internal_port        = 8000
-  force_https          = true    # public traffic; Flycast (private) stays plain http
+  force_https          = true    # also redirects Flycast http, so bot-engine uses the public https URL
   auto_stop_machines   = "off"   # always on: no cold start on the web demo's first signal
   auto_start_machines  = true
   min_machines_running = 1

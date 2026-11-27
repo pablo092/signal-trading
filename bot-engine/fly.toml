@@ -21,8 +21,10 @@ primary_region = "iad"    # same region as signal-service
   PAPER_TRADING           = "true"
   ORDER_EXECUTION_ENABLED = "false"
   ALPACA_BASE_URL         = "https://paper-api.alpaca.markets"
-  # Private Flycast address of signal-service (see signal-service/fly.toml).
-  SIGNAL_SERVICE_URL      = "http://trading-bot-signal-service.flycast"
+  # Public https address of signal-service (token-authenticated). Flycast over plain
+  # http does not work: signal-service's force_https redirects it to https on the
+  # .flycast name, which has no TLS (the request fails with EOF).
+  SIGNAL_SERVICE_URL      = "https://trading-bot-signal-service.fly.dev"
   # Browser origins of the local demo app (flutter run -d chrome --web-port 5000).
   # Every call still needs a token held only by that local build.
   CORS_ALLOWED_ORIGINS    = "http://localhost:5000"
