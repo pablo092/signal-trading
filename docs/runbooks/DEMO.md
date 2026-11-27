@@ -8,7 +8,7 @@ Everything is on Alpaca **paper**; nothing here can place a live order.
 
 | Part | Where | Needs |
 |---|---|---|
-| Signals (public, read-only) | Web demo on Vercel (`https://agent-gateway-eta.vercel.app`) | nothing |
+| Signals (public, read-only) | Web demo on Vercel (`https://signal-trading-demo.vercel.app`) | nothing |
 | Propose, approve or reject intents | Flutter app run locally against the Fly engine | the `owner` token |
 | Monitoring and alerts | Grafana Cloud dashboard **signal-trading — paper ops** | Grafana login |
 | Audit trail | Supabase SQL editor, schema `tradingbot` | Supabase login |
@@ -40,7 +40,7 @@ and stays out of the shell history):
 cd app
 read -rs OWNER_TOKEN
 flutter run -d chrome --web-port 5000 \
-  --dart-define=SIGNAL_SERVICE_URL=https://agent-gateway-eta.vercel.app \
+  --dart-define=SIGNAL_SERVICE_URL=https://signal-trading-demo.vercel.app \
   --dart-define=BOT_ENGINE_URL=https://trading-bot-engine.fly.dev \
   --dart-define=BOT_ENGINE_WS_URL=wss://trading-bot-engine.fly.dev/ws \
   --dart-define=BOT_ENGINE_TOKEN="$OWNER_TOKEN" \

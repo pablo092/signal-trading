@@ -5,7 +5,7 @@ approval. One codebase serves two builds:
 
 | Build | Where | Engine access |
 |---|---|---|
-| **Public web demo** | Vercel (`https://agent-gateway-eta.vercel.app`) | none: signals and a read-only portfolio summary go through Vercel functions that hold a read-only token server-side |
+| **Public web demo** | Vercel (`https://signal-trading-demo.vercel.app`) | none: signals and a read-only portfolio summary go through Vercel functions that hold a read-only token server-side |
 | **Local build** | your machine | direct, with a bearer token passed at build time: portfolio, propose intents, approve/reject (human token) |
 
 A public build never carries a token (ADR-003); see [DEMO.md](../docs/runbooks/DEMO.md) for the
