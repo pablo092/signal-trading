@@ -1,7 +1,7 @@
 # bot-engine — Fly.io deployment config
 #
 # Public API + WebSocket. Every /api/v1/* and /ws route requires a scoped token
-# (ADR-003); order execution stays disabled and the paper guard is enforced.
+# (ADR-003); the paper guard is enforced and every order needs a human approval.
 # Deploy with: cd bot-engine && flyctl deploy
 #
 # Secrets (flyctl secrets set ... — never put real values here):
@@ -19,7 +19,9 @@ primary_region = "iad"    # same region as signal-service
   ENV                     = "production"
   PORT                    = "8080"
   PAPER_TRADING           = "true"
-  ORDER_EXECUTION_ENABLED = "false"
+  # ADR-006 phase 1 (paper execution), started by the owner on 2026-11-27. Set to
+  # "false" to go back to phase 0: pending intents stay, approval is refused.
+  ORDER_EXECUTION_ENABLED = "true"
   ALPACA_BASE_URL         = "https://paper-api.alpaca.markets"
   # Public https address of signal-service (token-authenticated). Flycast over plain
   # http does not work: signal-service's force_https redirects it to https on the
