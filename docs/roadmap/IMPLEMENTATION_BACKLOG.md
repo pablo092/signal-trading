@@ -58,7 +58,14 @@ Exit criteria:
 | BL-32 ✅ | Remove `POST /api/v1/orders/place`; port its HTTP tests to intents; keep `orders:place-legacy` loadable | ADR-005 | M | BL-21 |
 | BL-33 ✅ | Trading metrics (intent transitions, risk failures, fills, reconciler health) and Prometheus alert rules | ADR-006 §6.4 | S | BL-23 |
 | BL-34 ✅ | ADR-006 (paper track record: phases, entry gate, stop rules) and runbooks PAPER_TRACK_RECORD.md, SUPABASE.md | — | S | — |
-| BL-35 | Owner: create the Supabase project, set `DATABASE_URL`/`DATABASE_SCHEMA` on Fly, accept ADR-006 (all done 2026-11-26), then run the phase-1 entry checklist | ADR-006 | S | BL-31, BL-34 |
+| BL-35 ✅ | Owner: Supabase project and Fly secrets, accept ADR-006, pass the phase-1 entry checklist. Done 2026-11-26: persistence survives a restart, `owner` token is the only `intent:approve` holder, kill-switch drill passed, alerts run in Grafana Cloud | ADR-006 | S | BL-31, BL-34 |
+| BL-36 | Run the checks never run so far: Go `-race`, `promtool check rules`, Dart tests, Postgres schema test, K8s dry-run (blocked by the GitHub Actions billing lock and Docker Desktop locally) | — | S | — |
+
+## Paper phase 1 (ADR-006)
+
+| ID | Item | Fixes | Effort | Depends on |
+|---|---|---|---|---|
+| BL-37 | Owner: record the decision in the track-record log, set `ORDER_EXECUTION_ENABLED=true` on paper, run the window (≥ 20 trading days, ≥ 30 fills, weekly review per PAPER_TRACK_RECORD.md), write the track-record summary | ADR-006 §6.2–6.5 | L | BL-35 |
 
 ## Later / requires new ADR
 
@@ -67,4 +74,4 @@ Exit criteria:
 | BL-27 | Reintroduce RabbitMQ for a concrete async flow (e.g. scheduled scans → intents) | A consumer exists |
 | BL-28 | Consolidate TimescaleDB into the main Postgres when bar storage is needed | Backtesting or history feature |
 | BL-29 | MCP Streamable HTTP transport with OAuth 2.1 | Remote agent access needed |
-| BL-30 | Live trading | Separate ADR, after a paper track record and all M3 controls |
+| BL-30 | Live trading | Separate ADR, after the BL-37 track-record summary and all M3 controls |
