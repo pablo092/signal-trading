@@ -44,9 +44,9 @@ class SignalCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: directionColor.withOpacity(0.15),
+                    color: directionColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: directionColor.withOpacity(0.4)),
+                    border: Border.all(color: directionColor.withValues(alpha: 0.4)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -170,7 +170,7 @@ class ConfidenceBar extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Confidence', style: TradingTheme.caption),
+            const Text('Confidence', style: TradingTheme.caption),
             Text(
               '${(confidence * 100).toStringAsFixed(0)}%',
               style: TradingTheme.caption.copyWith(color: color),
@@ -306,7 +306,7 @@ class _StrengthPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(label, style: TradingTheme.caption.copyWith(color: color)),
@@ -352,7 +352,7 @@ class ConnectionStatusBanner extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      color: TradingTheme.loss.withOpacity(0.15),
+      color: TradingTheme.loss.withValues(alpha: 0.15),
       child: Row(
         children: [
           const Icon(Icons.wifi_off, size: 14, color: TradingTheme.loss),

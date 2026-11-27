@@ -70,7 +70,7 @@ void main() {
 
     test('returns failure on network error', () async {
       when(() => repo.getSignal('AAPL', 'rsi'))
-          .thenAnswer((_) async => Left(NetworkFailure('timeout')));
+          .thenAnswer((_) async => const Left(NetworkFailure('timeout')));
 
       final result = await getSignal(const GetSignalParams(symbol: 'AAPL', strategy: 'rsi'));
       expect(result.isLeft(), true);

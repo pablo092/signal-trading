@@ -16,7 +16,6 @@ class MockWatchSignalsUseCase extends Mock implements WatchSignalsUseCase {}
 // ── Fixtures ─────────────────────────────────────────────────
 
 SignalEntity _makeSignal({
-  String direction = 'buy',
   double confidence = 0.85,
 }) =>
     SignalEntity(
@@ -51,7 +50,7 @@ void main() {
 
   group('SignalBloc', () {
     test('initial state is SignalInitial', () {
-      when(mockWatchSignals).thenAnswer((_) => const Stream.empty());
+      when(mockWatchSignals.call).thenAnswer((_) => const Stream.empty());
       expect(buildBloc().state, isA<SignalInitial>());
     });
 
@@ -63,7 +62,7 @@ void main() {
         build: () {
           when(() => mockGetSignal(any()))
               .thenAnswer((_) async => Right(_makeSignal()));
-          when(mockWatchSignals).thenAnswer((_) => const Stream.empty());
+          when(mockWatchSignals.call).thenAnswer((_) => const Stream.empty());
           return buildBloc();
         },
         act: (bloc) => bloc.add(
@@ -79,7 +78,7 @@ void main() {
         build: () {
           when(() => mockGetSignal(any()))
               .thenAnswer((_) async => Right(_makeSignal(confidence: 0.90)));
-          when(mockWatchSignals).thenAnswer((_) => const Stream.empty());
+          when(mockWatchSignals.call).thenAnswer((_) => const Stream.empty());
           return buildBloc();
         },
         act: (bloc) =>
@@ -96,7 +95,7 @@ void main() {
         build: () {
           when(() => mockGetSignal(any())).thenAnswer(
               (_) async => const Left(NetworkFailure('No internet')));
-          when(mockWatchSignals).thenAnswer((_) => const Stream.empty());
+          when(mockWatchSignals.call).thenAnswer((_) => const Stream.empty());
           return buildBloc();
         },
         act: (bloc) =>
@@ -112,7 +111,7 @@ void main() {
         build: () {
           when(() => mockGetSignal(any())).thenAnswer(
               (_) async => const Left(TimeoutFailure()));
-          when(mockWatchSignals).thenAnswer((_) => const Stream.empty());
+          when(mockWatchSignals.call).thenAnswer((_) => const Stream.empty());
           return buildBloc();
         },
         act: (bloc) =>
@@ -130,7 +129,7 @@ void main() {
               (_) async => const Left(
                     ServerFailure(message: 'Internal error', statusCode: 500),
                   ));
-          when(mockWatchSignals).thenAnswer((_) => const Stream.empty());
+          when(mockWatchSignals.call).thenAnswer((_) => const Stream.empty());
           return buildBloc();
         },
         act: (bloc) =>
@@ -143,7 +142,7 @@ void main() {
         build: () {
           when(() => mockGetSignal(any()))
               .thenAnswer((_) async => Right(_makeSignal()));
-          when(mockWatchSignals).thenAnswer((_) => const Stream.empty());
+          when(mockWatchSignals.call).thenAnswer((_) => const Stream.empty());
           return buildBloc();
         },
         act: (bloc) async {
@@ -166,7 +165,7 @@ void main() {
       blocTest<SignalBloc, SignalState>(
         'emits Loaded when signal received from stream',
         build: () {
-          when(mockWatchSignals)
+          when(mockWatchSignals.call)
               .thenAnswer((_) => Stream.value(_makeSignal()));
           return buildBloc();
         },
@@ -178,7 +177,7 @@ void main() {
       blocTest<SignalBloc, SignalState>(
         'emits Error on WebSocket failure',
         build: () {
-          when(mockWatchSignals).thenAnswer((_) => 
+          when(mockWatchSignals.call).thenAnswer((_) => 
             Stream.error(const NetworkFailure('disconnected')),
           );
           return buildBloc();
@@ -192,7 +191,7 @@ void main() {
     // ── Close ─────────────────────────────────────────────────
 
     test('closes without error', () async {
-      when(mockWatchSignals).thenAnswer((_) => const Stream.empty());
+      when(mockWatchSignals.call).thenAnswer((_) => const Stream.empty());
       final bloc = buildBloc();
       await expectLater(bloc.close(), completes);
     });

@@ -35,7 +35,7 @@ void main() {
         )).thenAnswer((inv) async {
       keys.add(inv.namedArguments[#idempotencyKey] as String);
       final Either<Failure, OrderIntent> result =
-          keys.length == 1 ? Left(const TimeoutFailure()) : Right(intent);
+          keys.length == 1 ? const Left(TimeoutFailure()) : Right(intent);
       return result;
     });
     final bloc = IntentsBloc(repository: repo);

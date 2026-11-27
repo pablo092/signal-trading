@@ -108,7 +108,7 @@ class _DashboardPageState extends State<DashboardPage> {
           : content,
       bottomNavigationBar: NavigationBar(
         backgroundColor: TradingTheme.surface,
-        indicatorColor: TradingTheme.accent.withOpacity(0.2),
+        indicatorColor: TradingTheme.accent.withValues(alpha: 0.2),
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
@@ -216,7 +216,7 @@ class _DashboardPageState extends State<DashboardPage> {
             decoration: BoxDecoration(
               color: TradingTheme.profit,
               shape: BoxShape.circle,
-              boxShadow: [BoxShadow(color: TradingTheme.profit.withOpacity(0.5), blurRadius: 6)],
+              boxShadow: [BoxShadow(color: TradingTheme.profit.withValues(alpha: 0.5), blurRadius: 6)],
             ),
           ),
           const Text('Trading Bot'),
@@ -247,7 +247,7 @@ class _DashboardPageState extends State<DashboardPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: TradingTheme.surface,
-        title: Text('About this demo', style: TradingTheme.titleMedium),
+        title: const Text('About this demo', style: TradingTheme.titleMedium),
         content: Text(
           'Signals are computed live by signal-service from Alpaca market data '
           '(RSI and EMA crossover strategies).\n\n'
@@ -279,7 +279,7 @@ class _DemoBanner extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       decoration: BoxDecoration(
-        color: TradingTheme.neutral.withOpacity(0.12),
+        color: TradingTheme.neutral.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -330,7 +330,7 @@ class _PortfolioSummarySection extends StatelessWidget {
           return Card(
             child: ListTile(
               leading: const Icon(Icons.cloud_off, color: TradingTheme.loss),
-              title: Text('Portfolio unavailable', style: TradingTheme.bodyMedium),
+              title: const Text('Portfolio unavailable', style: TradingTheme.bodyMedium),
               trailing: TextButton(onPressed: onRetry, child: const Text('Retry')),
             ),
           );
@@ -339,7 +339,7 @@ class _PortfolioSummarySection extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Paper portfolio', style: TradingTheme.caption),
+            const Text('Paper portfolio', style: TradingTheme.caption),
             const SizedBox(height: 4),
             Text('\$${_money.format(p.equity)}', style: TradingTheme.displayLarge),
             const SizedBox(height: 4),
@@ -396,14 +396,14 @@ class _PositionsSection extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
               child: Text('Open positions', style: TradingTheme.titleMedium),
             ),
             if (positions.isEmpty)
-              Card(
+              const Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(16),
                   child: Text(
                     'No open positions in the paper account.',
                     style: TradingTheme.bodyMedium,
@@ -495,7 +495,7 @@ class _DropdownField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       decoration: InputDecoration(labelText: label),
       dropdownColor: TradingTheme.surfaceVariant,
       style: TradingTheme.bodyMedium,
@@ -628,7 +628,7 @@ class _ConfidenceSparkline extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Signal Confidence History', style: TradingTheme.caption),
+            const Text('Signal Confidence History', style: TradingTheme.caption),
             const SizedBox(height: 12),
             SizedBox(
               height: 80,
@@ -648,7 +648,7 @@ class _ConfidenceSparkline extends StatelessWidget {
                       dotData: const FlDotData(show: false),
                       belowBarData: BarAreaData(
                         show: true,
-                        color: TradingTheme.accent.withOpacity(0.1),
+                        color: TradingTheme.accent.withValues(alpha: 0.1),
                       ),
                     ),
                   ],
@@ -676,8 +676,8 @@ class _RecentSignalsSection extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
               child: Text('Recent Signals', style: TradingTheme.titleMedium),
             ),
             ...recent.map((s) => _RecentSignalRow(signal: s)),
@@ -699,12 +699,12 @@ class _SignalHistorySection extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
               child: Text('History (this session)', style: TradingTheme.titleMedium),
             ),
             if (history.isEmpty)
-              Text('No signals yet.', style: TradingTheme.caption),
+              const Text('No signals yet.', style: TradingTheme.caption),
             ...history.reversed.map((s) => _RecentSignalRow(signal: s)),
           ],
         );
@@ -726,7 +726,7 @@ class _RecentSignalRow extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: CircleAvatar(
           radius: 18,
-          backgroundColor: color.withOpacity(0.15),
+          backgroundColor: color.withValues(alpha: 0.15),
           child: Icon(
             signal.direction == SignalDirection.buy
                 ? Icons.arrow_upward_rounded
